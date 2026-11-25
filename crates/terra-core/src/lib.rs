@@ -11,6 +11,7 @@
 #![forbid(unsafe_code)]
 
 pub mod hash;
+pub mod hydrology;
 pub mod noise;
 pub mod rng;
 pub mod sphere;
