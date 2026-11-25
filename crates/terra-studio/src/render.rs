@@ -272,7 +272,25 @@ pub fn render(world: &World, history: Option<&History>, opts: RenderOptions) -> 
     } else {
         vec![1.0; world.len()]
     };
-    let cell_colors = layer_colors(world, opts.layer, &shade);
+    let owner: Option<Vec<u16>> = if (opts.layer == Layer::Political || opts.civ_overlay) && history.is_some()
+    {
+        history
+            .and_then(|h| h.snapshot_at(opts.year.unwrap_or(h.config.years)))
+            .map(|s| s.owner.clone())
+    } else {
+        None
+    };
+    let civ_colors: Vec<[u8; 3]> = history
+        .map(|h| h.civs.iter().map(|c| civ_color(c.color_index)).collect())
+        .unwrap_or_default();
+    let cell_colors = layer_colors(
+        world,
+        opts.layer,
+        &shade,
+        owner.as_deref(),
+        &civ_colors,
+        opts.civ_overlay,
+    );
     let mut image = RgbImage::new(opts.width, opts.height, [5, 8, 11]);
 
     // Base pass: one nearest-cell lookup per pixel.
@@ -321,7 +339,14 @@ pub fn render(world: &World, history: Option<&History>, opts: RenderOptions) -> 
     image
 }
 
-fn layer_colors(world: &World, layer: Layer, shade: &[f64]) -> Vec<[u8; 3]> {
+fn layer_colors(
+    world: &World,
+    layer: Layer,
+    shade: &[f64],
+    owner: Option<&[u16]>,
+    civ_colors: &[[u8; 3]],
+    civ_overlay: bool,
+) -> Vec<[u8; 3]> {
     let n = world.len();
     let mut colors = vec![[0u8; 3]; n];
     for i in 0..n {
@@ -333,6 +358,15 @@ fn layer_colors(world: &World, layer: Layer, shade: &[f64]) -> Vec<[u8; 3]> {
                 if layer == Layer::Atlas && world.terrain.elevation[i] > 0.0 {
                     let base = rgb(world.biomes.at(cell).rgb());
                     apply_shade(base, s, 0.85 + s * 0.2)
+                } else if layer == Layer::Political {
+                    // Desaturate the physical base so political colors read
+                    // clearly, while retaining enough relief to locate cities.
+                    let base = hypsometric(elev, s);
+                    if elev > 0.0 {
+                        mix(base, [86, 92, 96], 0.52)
+                    } else {
+                        mix(base, [10, 24, 38], 0.35)
+                    }
                 } else {
                     hypsometric(elev, s)
                 }
@@ -373,6 +407,22 @@ fn layer_colors(world: &World, layer: Layer, shade: &[f64]) -> Vec<[u8; 3]> {
             }
             Layer::Stress => stress_color(world.tectonics.stress[i]),
         };
+        if let Some(owners) = owner {
+            if let Some(&id) = owners.get(i) {
+                if id != u16::MAX {
+                    if let Some(&civ) = civ_colors.get(id as usize) {
+                        let strength = if layer == Layer::Political {
+                            0.52
+                        } else if civ_overlay {
+                            0.3
+                        } else {
+                            0.0
+                        };
+                        colors[i] = mix(colors[i], civ, strength);
+                    }
+                }
+            }
+        }
         // Coastline darkening.
         if elev > 0.0
             && world
@@ -738,25 +788,26 @@ fn draw_civs(image: &mut RgbImage, world: &World, history: Option<&History>, yea
     };
     let w = image.width();
     let h = image.height();
-    // Territory tint.
+    // Borders between owners and along the edge of claimed territory.
     for cell in 0..world.len() as u32 {
-        let Some(owner) = snapshot.owner_of(cell) else {
-            continue;
-        };
-        let color = civ_color(history.civs[owner as usize].color_index);
-        let (x, y) = to_pixel(&world.sphere, cell, w, h);
-        image.blend(x.round() as i32, y.round() as i32, color, 0.42);
-    }
-    // Borders between owners.
-    for cell in 0..world.len() as u32 {
-        let Some(owner) = snapshot.owner_of(cell) else {
-            continue;
-        };
-        let (x, y) = to_pixel(&world.sphere, cell, w, h);
+        let owner = snapshot.owner_of(cell);
+        let (x0, y0) = to_pixel(&world.sphere, cell, w, h);
         for &nb in world.sphere.neighbors(cell) {
+            if nb <= cell {
+                continue;
+            }
             let other = snapshot.owner_of(nb);
-            if other != Some(owner) {
-                image.blend(x.round() as i32, y.round() as i32, [10, 14, 18], 0.75);
+            if other == owner {
+                continue;
+            }
+            let (x1, y1) = to_pixel(&world.sphere, nb, w, h);
+            if owner.is_some() || other.is_some() {
+                let color = if owner.is_some() && other.is_some() {
+                    [8, 11, 14]
+                } else {
+                    [24, 34, 40]
+                };
+                line_wrapped(image, x0, y0, x1, y1, 0, color);
             }
         }
     }
@@ -787,9 +838,11 @@ fn draw_civs(image: &mut RgbImage, world: &World, history: Option<&History>, yea
         let seat = civ.seat();
         let (x, y) = to_pixel(&world.sphere, seat, w, h);
         let label = civ.name.to_uppercase();
+        let label_width = (label.chars().count().min(24) as i32) * 6 * scale;
+        let start_x = (x.round() as i32 + 4).clamp(2, (w as i32 - label_width).max(2));
         draw_text(
             image,
-            (x.round() as i32 + 4).clamp(0, w as i32 - 1),
+            start_x,
             (y.round() as i32).clamp(8, h as i32 - 1),
             &label,
             scale,

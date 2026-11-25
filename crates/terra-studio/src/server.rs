@@ -1457,7 +1457,17 @@ fn cell_endpoint(app: &Arc<App>, request: &HttpRequest) -> Response {
     };
     let cell = match query_u32(request, "cell") {
         Ok(Some(c)) => c,
-        Ok(None) => return Response::error(400, "missing cell"),
+        Ok(None) => {
+            let lat = match request.query.get("lat").and_then(|v| v.parse::<f64>().ok()) {
+                Some(v) if v.is_finite() && (-90.0..=90.0).contains(&v) => v,
+                _ => return Response::error(400, "missing cell or valid lat/lon"),
+            };
+            let lon = match request.query.get("lon").and_then(|v| v.parse::<f64>().ok()) {
+                Some(v) if v.is_finite() && (-180.0..=180.0).contains(&v) => v,
+                _ => return Response::error(400, "missing cell or valid lat/lon"),
+            };
+            art.world.sphere.nearest_lat_lon(lat, lon)
+        }
         Err(r) => return r,
     };
     let Some(info) = art.world.cell_info(cell) else {
@@ -1902,38 +1912,6 @@ pub fn startup_token() -> String {
 /// Access to the listener address for tests and the launcher.
 pub fn local_url(addr: SocketAddr, token: &str) -> String {
     format!("http://127.0.0.1:{}/?t={}", addr.port(), token)
-}
-
-/// Launches the Studio server and opens the browser. Implemented with the
-/// launcher milestone; the scaffold returns a clear error if called early.
-pub fn launch() -> std::io::Result<()> {
-    let server = start(ServerConfig::default())?;
-    println!("Terra Studio: {}", local_url(server.addr, &server.token));
-    open_browser(&local_url(server.addr, &server.token));
-    loop {
-        std::thread::park();
-    }
-}
-
-fn open_browser(url: &str) {
-    let candidates: &[(&str, &[&str])] = if cfg!(target_os = "macos") {
-        &[("open", &[url])]
-    } else if cfg!(target_os = "windows") {
-        &[("cmd", &["/C", "start", "", url])]
-    } else {
-        &[("xdg-open", &[url]), ("gio", &["open", url])]
-    };
-    for (program, args) in candidates {
-        if std::process::Command::new(program)
-            .args(*args)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .is_ok()
-        {
-            return;
-        }
-    }
 }
 
 #[cfg(test)]
