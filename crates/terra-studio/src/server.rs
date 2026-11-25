@@ -14,7 +14,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::assets;
 use crate::json::{self, Json};
+use crate::render::{self, Layer, RenderOptions};
 use terra_core::world::{World, WorldConfig};
+use terra_history::chronicle::export as chronicle_export;
+use terra_history::chronicle::{Cause, Event, EventKind};
 use terra_history::civ::sim::{simulate, HistoryConfig};
 
 /// Maximum request header size in bytes.
@@ -708,6 +711,16 @@ fn route(app: &Arc<App>, request: &HttpRequest) -> Response {
         ("GET", "/api/health") => health(app),
         ("POST", "/api/run") => run_endpoint(app, request),
         ("GET", "/api/job") => job_endpoint(app, request),
+        ("GET", "/api/world") => world_endpoint(app, request),
+        ("GET", "/api/map") => map_endpoint(app, request),
+        ("GET", "/api/chronicle") => chronicle_endpoint(app, request),
+        ("GET", "/api/event") => event_endpoint(app, request),
+        ("GET", "/api/cell") => cell_endpoint(app, request),
+        ("GET", "/api/civs") => civs_endpoint(app, request),
+        ("GET", "/api/civ") => civ_endpoint(app, request),
+        ("GET", "/api/timeline") => timeline_endpoint(app, request),
+        ("GET", "/api/export/chronicle.md") => export_markdown(app, request),
+        ("GET", "/api/export/chronicle.json") => export_json(app, request),
         _ => Response::error(404, "not found"),
     }
 }
@@ -886,6 +899,933 @@ fn run_job(app: Arc<App>, id: String, world_cfg: WorldConfig, history_cfg: Histo
             job.error = Some("generation panicked".into());
         }
     }
+}
+
+fn artifact(app: &Arc<App>, id: &str) -> Result<Arc<Artifact>, Response> {
+    let jobs = app.jobs.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(job) = jobs.map.get(id) else {
+        return Err(Response::error(404, "unknown world"));
+    };
+    match job.status {
+        JobStatus::Running => Err(Response::error(503, "world is still generating")),
+        JobStatus::Failed => Err(Response::error(
+            500,
+            job.error.as_deref().unwrap_or("generation failed"),
+        )),
+        JobStatus::Done => job
+            .world
+            .clone()
+            .ok_or_else(|| Response::error(500, "world missing")),
+    }
+}
+
+fn request_id(request: &HttpRequest) -> Result<String, Response> {
+    request
+        .query
+        .get("id")
+        .cloned()
+        .ok_or_else(|| Response::error(400, "missing world id"))
+}
+
+fn query_u32(request: &HttpRequest, key: &str) -> Result<Option<u32>, Response> {
+    match request.query.get(key) {
+        None => Ok(None),
+        Some(v) => v
+            .parse::<u32>()
+            .map(Some)
+            .map_err(|_| Response::error(400, &format!("{key} must be a non-negative integer"))),
+    }
+}
+
+fn query_usize(request: &HttpRequest, key: &str, default: usize) -> Result<usize, Response> {
+    match request.query.get(key) {
+        None => Ok(default),
+        Some(v) => v
+            .parse::<usize>()
+            .map_err(|_| Response::error(400, &format!("{key} must be a non-negative integer"))),
+    }
+}
+
+fn world_endpoint(app: &Arc<App>, request: &HttpRequest) -> Response {
+    let id = match request_id(request) {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let art = match artifact(app, &id) {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    let world = &art.world;
+    let history = &art.history;
+    let stats = &world.stats;
+    let mut layers = Vec::new();
+    for layer in Layer::ALL {
+        let entries: Vec<Json> = render::legend(layer)
+            .into_iter()
+            .map(|e| {
+                Json::obj(vec![
+                    ("label", Json::str(e.label)),
+                    ("color", Json::str(format!("#{:06x}", e.rgb))),
+                ])
+            })
+            .collect();
+        layers.push(Json::obj(vec![
+            ("code", Json::str(layer.code())),
+            ("label", Json::str(layer.label())),
+            ("legend", Json::Array(entries)),
+        ]));
+    }
+    let civs: Vec<Json> = history
+        .civs
+        .iter()
+        .map(|c| {
+            Json::obj(vec![
+                ("id", Json::num(f64::from(c.id))),
+                ("name", Json::str(c.name.clone())),
+                (
+                    "color",
+                    Json::str(format_hex(render::civ_color(c.color_index))),
+                ),
+                ("alive", Json::Bool(c.alive)),
+                ("population", Json::num(c.population)),
+                ("cells", Json::num(c.cells.len() as f64)),
+                ("tech", Json::num(f64::from(c.tech))),
+            ])
+        })
+        .collect();
+    let cs = history.chronicle.stats();
+    let body = Json::obj(vec![
+        ("id", Json::str(id)),
+        ("planet", Json::str(world.name.clone())),
+        ("seed", Json::num(world.config.seed as f64)),
+        ("years", Json::num(f64::from(history.config.years))),
+        ("subdiv", Json::num(f64::from(world.config.subdiv))),
+        ("cells", Json::num(world.len() as f64)),
+        ("hash", Json::str(world.hashes.combined.clone())),
+        (
+            "stats",
+            Json::obj(vec![
+                ("landFraction", Json::num(stats.land_fraction)),
+                ("landCells", Json::num(f64::from(stats.land_cells))),
+                ("oceanCells", Json::num(f64::from(stats.ocean_cells))),
+                ("lakes", Json::num(f64::from(stats.lakes))),
+                ("rivers", Json::num(f64::from(stats.river_cells))),
+                ("deltas", Json::num(f64::from(stats.delta_cells))),
+                ("plates", Json::num(f64::from(stats.plates))),
+                ("convergent", Json::num(f64::from(stats.convergent))),
+                ("divergent", Json::num(f64::from(stats.divergent))),
+                ("transform", Json::num(f64::from(stats.transform))),
+                ("continents", Json::num(f64::from(stats.continents))),
+                (
+                    "largestContinentKm2",
+                    Json::num(stats.largest_continent_km2),
+                ),
+                ("meanTemperatureC", Json::num(stats.mean_temperature_c)),
+                ("meanPrecipMm", Json::num(stats.mean_precip_mm)),
+                ("maxElevationM", Json::num(stats.max_elevation)),
+                ("minElevationM", Json::num(stats.min_elevation)),
+                ("meanLandElevationM", Json::num(stats.mean_land_elevation)),
+                ("meanSpecies", Json::num(stats.mean_species)),
+                ("carryingCapacity", Json::num(stats.carrying_capacity)),
+                ("npp", Json::num(stats.npp_t_c_yr)),
+                (
+                    "biomes",
+                    Json::Object(
+                        stats
+                            .biome_counts
+                            .iter()
+                            .map(|(k, v)| ((*k).to_string(), Json::num(f64::from(*v))))
+                            .collect(),
+                    ),
+                ),
+            ]),
+        ),
+        (
+            "hashes",
+            Json::obj(vec![
+                ("plates", Json::str(world.hashes.plates.clone())),
+                ("terrain", Json::str(world.hashes.terrain.clone())),
+                ("hydrology", Json::str(world.hashes.hydrology.clone())),
+                ("climate", Json::str(world.hashes.climate.clone())),
+                ("biosphere", Json::str(world.hashes.biosphere.clone())),
+                ("chronicle", Json::str(history.hashes.chronicle.clone())),
+                ("history", Json::str(history.hashes.civs.clone())),
+            ]),
+        ),
+        (
+            "history",
+            Json::obj(vec![
+                ("civs", Json::num(history.civs.len() as f64)),
+                (
+                    "surviving",
+                    Json::num(f64::from(history.stats.surviving_civs)),
+                ),
+                ("collapses", Json::num(f64::from(history.stats.collapses))),
+                ("wars", Json::num(f64::from(history.stats.wars))),
+                ("battles", Json::num(f64::from(history.stats.battles))),
+                (
+                    "tradeRoutes",
+                    Json::num(f64::from(history.stats.trade_routes)),
+                ),
+                ("cities", Json::num(f64::from(history.stats.cities))),
+                ("migrations", Json::num(f64::from(history.stats.migrations))),
+                ("famines", Json::num(f64::from(history.stats.famines))),
+                ("totalPopulation", Json::num(history.stats.total_population)),
+                (
+                    "claimedCells",
+                    Json::num(f64::from(history.stats.claimed_cells)),
+                ),
+                ("sound", Json::Bool(history.chronicle.is_sound())),
+            ]),
+        ),
+        (
+            "chronicle",
+            Json::obj(vec![
+                ("events", Json::num(f64::from(cs.events))),
+                ("firstYear", Json::num(f64::from(cs.first_year))),
+                ("lastYear", Json::num(f64::from(cs.last_year))),
+                ("rootEvents", Json::num(f64::from(cs.root_events))),
+                ("meanSeverity", Json::num(cs.mean_severity)),
+                ("kinds", Json::num(f64::from(cs.kinds))),
+                (
+                    "counts",
+                    Json::Object(
+                        history
+                            .chronicle
+                            .counts_by_kind()
+                            .iter()
+                            .map(|(k, v)| (k.code().to_string(), Json::num(f64::from(*v))))
+                            .collect(),
+                    ),
+                ),
+            ]),
+        ),
+        ("layers", Json::Array(layers)),
+        ("civs", Json::Array(civs)),
+        (
+            "snapshotYears",
+            Json::Array(
+                history
+                    .snapshots
+                    .iter()
+                    .map(|s| Json::num(f64::from(s.year)))
+                    .collect(),
+            ),
+        ),
+    ]);
+    Response::json(&body)
+}
+
+fn map_endpoint(app: &Arc<App>, request: &HttpRequest) -> Response {
+    let id = match request_id(request) {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let art = match artifact(app, &id) {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    let layer_code = request
+        .query
+        .get("layer")
+        .map(String::as_str)
+        .unwrap_or("atlas");
+    let Some(layer) = Layer::from_code(layer_code) else {
+        return Response::error(400, "unknown layer");
+    };
+    let Ok(width) = query_usize(request, "w", 1024) else {
+        return Response::error(400, "w must be an integer");
+    };
+    let Ok(height) = query_usize(request, "h", 512) else {
+        return Response::error(400, "h must be an integer");
+    };
+    let year = match query_u32(request, "year") {
+        Ok(y) => y,
+        Err(r) => return r,
+    };
+    let opts = RenderOptions {
+        width: width.clamp(64, 2_048) as u32,
+        height: height.clamp(32, 1_024) as u32,
+        layer,
+        year,
+        rivers: request.query.get("rivers").map(String::as_str) != Some("0"),
+        civ_overlay: layer == Layer::Political
+            || request.query.get("civs").map(String::as_str) == Some("1"),
+        hillshade: request.query.get("shade").map(String::as_str) != Some("0"),
+    };
+    let image = render::render(&art.world, Some(&art.history), opts);
+    Response::new(200, "image/png", image.to_png())
+}
+
+fn event_summary_json(event: &Event) -> Json {
+    Json::obj(vec![
+        ("id", Json::num(f64::from(event.id))),
+        ("year", Json::num(f64::from(event.year))),
+        ("kind", Json::str(event.kind.code())),
+        ("category", Json::str(event.kind.category())),
+        ("label", Json::str(event.kind.label())),
+        ("title", Json::str(event.title.clone())),
+        ("severity", Json::num(event.severity)),
+        (
+            "civ",
+            match event.civ {
+                Some(c) => Json::num(f64::from(c)),
+                None => Json::Null,
+            },
+        ),
+        (
+            "cell",
+            match event.cell {
+                Some(c) => Json::num(f64::from(c)),
+                None => Json::Null,
+            },
+        ),
+    ])
+}
+
+fn chronicle_endpoint(app: &Arc<App>, request: &HttpRequest) -> Response {
+    let id = match request_id(request) {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let art = match artifact(app, &id) {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    let from = match query_u32(request, "from") {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let to = match query_u32(request, "to") {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let civ = match request.query.get("civ") {
+        None => None,
+        Some(v) => match v.parse::<u16>() {
+            Ok(c) => Some(c),
+            Err(_) => return Response::error(400, "civ must be an integer"),
+        },
+    };
+    let cell = match query_u32(request, "cell") {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let offset = match query_usize(request, "offset", 0) {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let limit = match query_usize(request, "limit", 50) {
+        Ok(v) => v.clamp(1, 200),
+        Err(r) => return r,
+    };
+    let mut query = art.history.chronicle.query();
+    if let (Some(a), Some(b)) = (from, to) {
+        query = query.years(a, b);
+    } else if let Some(a) = from {
+        query = query.years(a, u32::MAX);
+    } else if let Some(b) = to {
+        query = query.years(0, b);
+    }
+    if let Some(kind) = request.query.get("kind") {
+        if kind != "all" {
+            match EventKind::from_code(kind) {
+                Some(k) => query = query.kind(k),
+                None => return Response::error(400, "unknown event kind"),
+            }
+        }
+    }
+    if let Some(c) = civ {
+        query = query.civ(c);
+    }
+    if let Some(c) = cell {
+        query = query.cell(c);
+    }
+    if let Some(q) = request.query.get("q") {
+        query = query.text(q.clone());
+    }
+    let total = query.count();
+    let events: Vec<Json> = query
+        .page(offset, limit)
+        .into_iter()
+        .map(event_summary_json)
+        .collect();
+    let body = Json::obj(vec![
+        ("total", Json::num(total as f64)),
+        ("offset", Json::num(offset as f64)),
+        ("limit", Json::num(limit as f64)),
+        ("events", Json::Array(events)),
+    ]);
+    Response::json(&body)
+}
+
+fn cause_json(cause: &Cause, history: &terra_history::civ::History) -> Json {
+    match cause {
+        Cause::Event(id) => {
+            let target = history.chronicle.get(*id);
+            Json::obj(vec![
+                ("type", Json::str("event")),
+                ("id", Json::num(f64::from(*id))),
+                (
+                    "title",
+                    target
+                        .map(|e| Json::str(e.title.clone()))
+                        .unwrap_or(Json::Null),
+                ),
+                (
+                    "year",
+                    target
+                        .map(|e| Json::num(f64::from(e.year)))
+                        .unwrap_or(Json::Null),
+                ),
+                (
+                    "kind",
+                    target
+                        .map(|e| Json::str(e.kind.code()))
+                        .unwrap_or(Json::Null),
+                ),
+            ])
+        }
+        Cause::State(f) => Json::obj(vec![
+            ("type", Json::str("state")),
+            ("key", Json::str(f.key)),
+            ("label", Json::str(f.label)),
+            ("value", Json::num(f.value)),
+            ("unit", Json::str(f.unit)),
+            ("text", Json::str(f.describe())),
+            (
+                "cell",
+                match f.cell {
+                    Some(c) => Json::num(f64::from(c)),
+                    None => Json::Null,
+                },
+            ),
+            (
+                "civ",
+                match f.civ {
+                    Some(c) => Json::num(f64::from(c)),
+                    None => Json::Null,
+                },
+            ),
+        ]),
+    }
+}
+
+fn event_endpoint(app: &Arc<App>, request: &HttpRequest) -> Response {
+    let id = match request_id(request) {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let art = match artifact(app, &id) {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    let event_id = match query_u32(request, "event") {
+        Ok(Some(v)) => v,
+        Ok(None) => return Response::error(400, "missing event id"),
+        Err(r) => return r,
+    };
+    let Some(event) = art.history.chronicle.get(event_id) else {
+        return Response::error(404, "unknown event");
+    };
+    let causes: Vec<Json> = event
+        .causes
+        .iter()
+        .map(|c| cause_json(c, &art.history))
+        .collect();
+    let chain = art.history.chronicle.cause_chain(event_id);
+    let chain_json = match &chain {
+        Some(chain) => {
+            let nodes: Vec<Json> = chain
+                .nodes
+                .iter()
+                .map(|n| {
+                    Json::obj(vec![
+                        ("id", Json::num(f64::from(n.event.id))),
+                        ("year", Json::num(f64::from(n.event.year))),
+                        ("kind", Json::str(n.event.kind)),
+                        ("title", Json::str(n.event.title.clone())),
+                        ("depth", Json::num(f64::from(n.depth))),
+                        (
+                            "parent",
+                            match n.parent {
+                                Some(p) => Json::num(f64::from(p)),
+                                None => Json::Null,
+                            },
+                        ),
+                    ])
+                })
+                .collect();
+            let facts: Vec<Json> = chain
+                .facts
+                .iter()
+                .map(|f| {
+                    Json::obj(vec![
+                        ("depth", Json::num(f64::from(f.depth))),
+                        ("from", Json::num(f64::from(f.from))),
+                        ("key", Json::str(f.fact.key)),
+                        ("label", Json::str(f.fact.label)),
+                        ("value", Json::num(f.fact.value)),
+                        ("unit", Json::str(f.fact.unit)),
+                        ("text", Json::str(f.fact.describe())),
+                    ])
+                })
+                .collect();
+            Json::obj(vec![
+                ("nodes", Json::Array(nodes)),
+                ("facts", Json::Array(facts)),
+                ("maxDepth", Json::num(f64::from(chain.max_depth))),
+                ("truncated", Json::Bool(chain.truncated)),
+            ])
+        }
+        None => Json::Null,
+    };
+    let paths = art.history.chronicle.trace_paths(event_id, 8);
+    let path_json: Vec<Json> = paths
+        .iter()
+        .map(|p| {
+            let steps: Vec<Json> = p
+                .steps
+                .iter()
+                .map(|step| match step {
+                    terra_history::chronicle::query::TraceStep::Event(e) => Json::obj(vec![
+                        ("type", Json::str("event")),
+                        ("id", Json::num(f64::from(e.id))),
+                        ("title", Json::str(e.title.clone())),
+                        ("year", Json::num(f64::from(e.year))),
+                    ]),
+                    terra_history::chronicle::query::TraceStep::Fact(f) => Json::obj(vec![
+                        ("type", Json::str("state")),
+                        ("label", Json::str(f.label)),
+                        ("text", Json::str(f.describe())),
+                        ("value", Json::num(f.value)),
+                        ("unit", Json::str(f.unit)),
+                    ]),
+                })
+                .collect();
+            Json::Array(steps)
+        })
+        .collect();
+    let descendants: Vec<Json> = art
+        .history
+        .chronicle
+        .descendants(event_id)
+        .into_iter()
+        .take(40)
+        .filter_map(|d| art.history.chronicle.get(d))
+        .map(event_summary_json)
+        .collect();
+    let civ = event
+        .civ
+        .and_then(|c| art.history.civs.get(c as usize))
+        .map(|c| {
+            Json::obj(vec![
+                ("id", Json::num(f64::from(c.id))),
+                ("name", Json::str(c.name.clone())),
+                ("alive", Json::Bool(c.alive)),
+            ])
+        });
+    let body = Json::obj(vec![
+        ("event", event_summary_json(event)),
+        ("detail", Json::str(event.detail.clone())),
+        ("causes", Json::Array(causes)),
+        (
+            "explain",
+            art.history
+                .chronicle
+                .explain(event_id)
+                .map(Json::str)
+                .unwrap_or(Json::Null),
+        ),
+        ("chain", chain_json),
+        ("paths", Json::Array(path_json)),
+        ("descendants", Json::Array(descendants)),
+        ("civInfo", civ.unwrap_or(Json::Null)),
+        ("sound", Json::Bool(art.history.chronicle.is_sound())),
+    ]);
+    Response::json(&body)
+}
+
+fn cell_endpoint(app: &Arc<App>, request: &HttpRequest) -> Response {
+    let id = match request_id(request) {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let art = match artifact(app, &id) {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    let cell = match query_u32(request, "cell") {
+        Ok(Some(c)) => c,
+        Ok(None) => return Response::error(400, "missing cell"),
+        Err(r) => return r,
+    };
+    let Some(info) = art.world.cell_info(cell) else {
+        return Response::error(404, "cell out of range");
+    };
+    let year = match query_u32(request, "year") {
+        Ok(y) => y.unwrap_or(art.history.config.years),
+        Err(r) => return r,
+    };
+    let owner = art.history.snapshot_at(year).and_then(|s| s.owner_of(cell));
+    let owner_json = match owner {
+        Some(o) => Json::obj(vec![
+            ("id", Json::num(f64::from(o))),
+            (
+                "name",
+                Json::str(
+                    art.history
+                        .civs
+                        .get(o as usize)
+                        .map(|c| c.name.clone())
+                        .unwrap_or_else(|| format!("Civilization {o}")),
+                ),
+            ),
+        ]),
+        None => Json::Null,
+    };
+    let events: Vec<Json> = art
+        .history
+        .chronicle
+        .events_at_cell(cell)
+        .into_iter()
+        .take(20)
+        .map(event_summary_json)
+        .collect();
+    let body = Json::obj(vec![
+        ("cell", Json::num(f64::from(cell))),
+        ("lat", Json::num(info.lat)),
+        ("lon", Json::num(info.lon)),
+        ("elevation", Json::num(info.elevation)),
+        ("biome", Json::str(info.biome)),
+        ("biomeLabel", Json::str(info.biome_label)),
+        ("temperature", Json::num(info.temperature_c)),
+        ("seasonality", Json::num(info.seasonality_c)),
+        ("precip", Json::num(info.precip_mm)),
+        ("aridity", Json::num(info.aridity)),
+        ("humidity", Json::num(info.humidity)),
+        ("plate", Json::num(f64::from(info.plate))),
+        ("plateKind", Json::str(info.plate_kind)),
+        ("stress", Json::str(info.stress)),
+        ("uplift", Json::num(info.uplift_m)),
+        ("discharge", Json::num(info.discharge_m3s)),
+        ("river", Json::Bool(info.river)),
+        ("lake", Json::Bool(info.lake)),
+        ("delta", Json::Bool(info.delta)),
+        ("npp", Json::num(info.npp_g_m2_yr)),
+        ("species", Json::num(f64::from(info.species))),
+        ("carryingCapacity", Json::num(info.carrying_capacity)),
+        ("landmass", Json::num(f64::from(info.landmass))),
+        ("crustAge", Json::num(info.crust_age_myr)),
+        ("owner", owner_json),
+        ("year", Json::num(f64::from(year))),
+        ("events", Json::Array(events)),
+    ]);
+    Response::json(&body)
+}
+
+fn civs_endpoint(app: &Arc<App>, request: &HttpRequest) -> Response {
+    let id = match request_id(request) {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let art = match artifact(app, &id) {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    let civs: Vec<Json> = art
+        .history
+        .civs
+        .iter()
+        .map(|c| civ_json(c, &art.history))
+        .collect();
+    Response::json(&Json::obj(vec![
+        ("civs", Json::Array(civs)),
+        ("count", Json::num(art.history.civs.len() as f64)),
+    ]))
+}
+
+fn civ_json(civ: &terra_history::civ::Civ, history: &terra_history::civ::History) -> Json {
+    let cities: Vec<Json> = civ
+        .cities
+        .iter()
+        .map(|city| {
+            Json::obj(vec![
+                ("cell", Json::num(f64::from(city.cell))),
+                ("name", Json::str(city.name.clone())),
+                ("population", Json::num(city.population)),
+                ("since", Json::num(f64::from(city.since))),
+                ("capital", Json::Bool(city.capital)),
+            ])
+        })
+        .collect();
+    let resources = Json::Object(
+        civ.resources
+            .iter()
+            .map(|(r, n)| (r.code().to_string(), Json::num(f64::from(*n))))
+            .collect(),
+    );
+    let wars: Vec<Json> = history
+        .wars
+        .iter()
+        .filter(|w| w.a == civ.id || w.b == civ.id)
+        .map(|w| {
+            Json::obj(vec![
+                ("a", Json::num(f64::from(w.a))),
+                ("b", Json::num(f64::from(w.b))),
+                ("start", Json::num(f64::from(w.start))),
+                (
+                    "end",
+                    match w.end {
+                        Some(e) => Json::num(f64::from(e)),
+                        None => Json::Null,
+                    },
+                ),
+                ("battles", Json::num(f64::from(w.battles))),
+            ])
+        })
+        .collect();
+    Json::obj(vec![
+        ("id", Json::num(f64::from(civ.id))),
+        ("name", Json::str(civ.name.clone())),
+        (
+            "color",
+            Json::str(format_hex(render::civ_color(civ.color_index))),
+        ),
+        ("capital", Json::num(f64::from(civ.capital))),
+        ("capitalName", Json::str(civ.capital_name.clone())),
+        ("seat", Json::num(f64::from(civ.seat()))),
+        ("cells", Json::num(civ.cells.len() as f64)),
+        ("population", Json::num(civ.population)),
+        ("tech", Json::num(f64::from(civ.tech))),
+        ("cohesion", Json::num(civ.cohesion)),
+        ("military", Json::num(civ.military)),
+        ("treasury", Json::num(civ.treasury)),
+        ("food", Json::num(civ.food)),
+        ("alive", Json::Bool(civ.alive)),
+        (
+            "collapsedYear",
+            match civ.collapsed_year {
+                Some(y) => Json::num(f64::from(y)),
+                None => Json::Null,
+            },
+        ),
+        ("founded", Json::num(f64::from(civ.founded_year))),
+        (
+            "traits",
+            Json::obj(vec![
+                ("agrarian", Json::num(civ.traits.agrarian)),
+                ("martial", Json::num(civ.traits.martial)),
+                ("mercantile", Json::num(civ.traits.mercantile)),
+                ("label", Json::str(civ.traits.describe())),
+            ]),
+        ),
+        ("resources", resources),
+        ("cities", Json::Array(cities)),
+        ("wars", Json::Array(wars)),
+        ("atWar", Json::Bool(civ.at_war())),
+        (
+            "techName",
+            Json::str(
+                terra_history::civ::TECHNOLOGY_NAMES
+                    .get(civ.tech.saturating_sub(1) as usize)
+                    .copied()
+                    .unwrap_or("Stone age"),
+            ),
+        ),
+    ])
+}
+
+fn civ_endpoint(app: &Arc<App>, request: &HttpRequest) -> Response {
+    let id = match request_id(request) {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let art = match artifact(app, &id) {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    let civ_id = match request.query.get("civ") {
+        None => return Response::error(400, "missing civ id"),
+        Some(v) => match v.parse::<u16>() {
+            Ok(c) => c,
+            Err(_) => return Response::error(400, "civ must be an integer"),
+        },
+    };
+    let Some(civ) = art.history.civs.get(civ_id as usize) else {
+        return Response::error(404, "unknown civilization");
+    };
+    let events: Vec<Json> = art
+        .history
+        .chronicle
+        .events_for_civ(civ_id)
+        .into_iter()
+        .take(200)
+        .map(event_summary_json)
+        .collect();
+    let history_json = civ_json(civ, &art.history);
+    Response::json(&Json::obj(vec![
+        ("civ", history_json),
+        ("events", Json::Array(events)),
+    ]))
+}
+
+fn timeline_endpoint(app: &Arc<App>, request: &HttpRequest) -> Response {
+    let id = match request_id(request) {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let art = match artifact(app, &id) {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    let density: Vec<Json> = art
+        .history
+        .chronicle
+        .density_by_century()
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            Json::obj(vec![
+                ("century", Json::num(i as f64)),
+                ("count", Json::num(f64::from(*n))),
+            ])
+        })
+        .collect();
+    let series: Vec<Json> = art
+        .history
+        .snapshots
+        .iter()
+        .map(|s| {
+            let civs: Vec<Json> = s
+                .civs
+                .iter()
+                .map(|c| {
+                    Json::obj(vec![
+                        ("id", Json::num(f64::from(c.id))),
+                        ("population", Json::num(c.population)),
+                        ("cells", Json::num(f64::from(c.cells))),
+                        ("tech", Json::num(f64::from(c.tech))),
+                        ("cohesion", Json::num(c.cohesion)),
+                        ("alive", Json::Bool(c.alive)),
+                    ])
+                })
+                .collect();
+            Json::obj(vec![
+                ("year", Json::num(f64::from(s.year))),
+                ("civs", Json::Array(civs)),
+            ])
+        })
+        .collect();
+    let wars: Vec<Json> = art
+        .history
+        .wars
+        .iter()
+        .map(|w| {
+            Json::obj(vec![
+                ("a", Json::num(f64::from(w.a))),
+                ("b", Json::num(f64::from(w.b))),
+                ("start", Json::num(f64::from(w.start))),
+                (
+                    "end",
+                    match w.end {
+                        Some(e) => Json::num(f64::from(e)),
+                        None => Json::Null,
+                    },
+                ),
+                ("battles", Json::num(f64::from(w.battles))),
+                ("casualties", Json::num(w.casualties)),
+                (
+                    "winner",
+                    match w.winner {
+                        Some(v) => Json::num(f64::from(v)),
+                        None => Json::Null,
+                    },
+                ),
+            ])
+        })
+        .collect();
+    Response::json(&Json::obj(vec![
+        ("density", Json::Array(density)),
+        ("series", Json::Array(series)),
+        ("wars", Json::Array(wars)),
+        (
+            "civs",
+            Json::Array(
+                art.history
+                    .civs
+                    .iter()
+                    .map(|c| {
+                        Json::obj(vec![
+                            ("id", Json::num(f64::from(c.id))),
+                            ("name", Json::str(c.name.clone())),
+                            (
+                                "color",
+                                Json::str(format_hex(render::civ_color(c.color_index))),
+                            ),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+        ("years", Json::num(f64::from(art.history.config.years))),
+    ]))
+}
+
+fn export_markdown(app: &Arc<App>, request: &HttpRequest) -> Response {
+    let id = match request_id(request) {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let art = match artifact(app, &id) {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    let text = chronicle_export::markdown(&art.world.name, &art.history.chronicle);
+    let filename = format!("{}-chronicle.md", safe_filename(&art.world.name));
+    Response::new(200, "text/markdown; charset=utf-8", text).with_header(
+        "Content-Disposition",
+        format!("attachment; filename=\"{filename}\""),
+    )
+}
+
+fn export_json(app: &Arc<App>, request: &HttpRequest) -> Response {
+    let id = match request_id(request) {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let art = match artifact(app, &id) {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    let text = chronicle_export::json(&art.world.name, &art.history.chronicle);
+    let filename = format!("{}-chronicle.json", safe_filename(&art.world.name));
+    Response::new(200, "application/json; charset=utf-8", text).with_header(
+        "Content-Disposition",
+        format!("attachment; filename=\"{filename}\""),
+    )
+}
+
+fn safe_filename(name: &str) -> String {
+    let mut out: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    out = out.trim_matches('-').to_string();
+    if out.is_empty() {
+        out.push_str("terra");
+    }
+    out.chars().take(48).collect()
+}
+
+fn format_hex(color: [u8; 3]) -> String {
+    format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2])
 }
 
 fn stream_sse(stream: &mut TcpStream, app: &Arc<App>, request: &HttpRequest) {
@@ -1223,6 +2163,178 @@ mod tests {
         }
         assert!(raw.contains("text/event-stream"));
         assert!(raw.contains("event: complete"), "{raw}");
+    }
+
+    fn start_small(addr: SocketAddr) -> String {
+        let (status, body) = post_json(
+            addr,
+            "/api/run?t=test-token",
+            "{\"seed\":5,\"years\":300,\"subdiv\":2,\"civs\":3}",
+        );
+        assert_eq!(status, 202);
+        let value = json::parse(&String::from_utf8_lossy(&body)).unwrap();
+        let id = value.get("id").unwrap().as_str().unwrap().to_string();
+        for _ in 0..200 {
+            std::thread::sleep(Duration::from_millis(25));
+            let (_, _, body) = get(addr, &format!("/api/job?id={id}&t=test-token"));
+            let v = json::parse(&String::from_utf8_lossy(&body)).unwrap();
+            match v.get("status").unwrap().as_str() {
+                Some("done") => return id,
+                Some("failed") => panic!("job failed: {body:?}"),
+                _ => {}
+            }
+        }
+        panic!("job did not finish");
+    }
+
+    #[test]
+    fn world_and_map_endpoints_work() {
+        let (_server, addr) = test_server();
+        let id = start_small(addr);
+        let (status, _, body) = get(addr, &format!("/api/world?id={id}&t=test-token"));
+        assert_eq!(status, 200);
+        let text = String::from_utf8_lossy(&body);
+        let v = json::parse(&text).unwrap();
+        assert!(v.get("planet").unwrap().as_str().unwrap().len() > 2);
+        assert!(v.get("layers").unwrap().as_array().unwrap().len() >= 10);
+        assert!(v.get("stats").unwrap().get("plates").is_some());
+        assert!(v.get("history").unwrap().get("sound").unwrap().as_bool() == Some(true));
+
+        for layer in [
+            "atlas",
+            "elevation",
+            "plates",
+            "biomes",
+            "temperature",
+            "precipitation",
+            "rivers",
+            "political",
+            "biodiversity",
+            "stress",
+        ] {
+            let (status, head, body) = get(
+                addr,
+                &format!("/api/map?id={id}&layer={layer}&w=200&h=100&t=test-token"),
+            );
+            assert_eq!(status, 200, "{layer}");
+            assert!(head.contains("image/png"));
+            assert_eq!(&body[..8], &crate::png::PNG_SIGNATURE);
+            assert!(body.len() > 200);
+        }
+        assert_eq!(
+            get(addr, &format!("/api/map?id={id}&layer=nope&t=test-token")).0,
+            400
+        );
+        assert_eq!(
+            get(
+                addr,
+                &format!("/api/map?id={id}&layer=atlas&w=999999&t=test-token")
+            )
+            .0,
+            200
+        );
+    }
+
+    #[test]
+    fn chronicle_cell_civs_timeline_and_exports() {
+        let (_server, addr) = test_server();
+        let id = start_small(addr);
+        let (status, _, body) = get(
+            addr,
+            &format!("/api/chronicle?id={id}&limit=10&t=test-token"),
+        );
+        assert_eq!(status, 200);
+        let v = json::parse(&String::from_utf8_lossy(&body)).unwrap();
+        assert!(v.get("total").unwrap().as_u64().unwrap() >= 4);
+        let events = v.get("events").unwrap().as_array().unwrap();
+        assert_eq!(events.len(), 10);
+        let event_id = events[0].get("id").unwrap().as_u64().unwrap();
+        let cell = events[0].get("cell");
+        let (status, _, body) = get(
+            addr,
+            &format!("/api/event?id={id}&event={event_id}&t=test-token"),
+        );
+        assert_eq!(status, 200);
+        let detail = json::parse(&String::from_utf8_lossy(&body)).unwrap();
+        assert!(!detail.get("causes").unwrap().as_array().unwrap().is_empty());
+        assert!(detail.get("chain").unwrap().get("nodes").is_some());
+        assert!(detail.get("explain").unwrap().as_str().unwrap().len() > 20);
+
+        if let Some(cell) = cell.and_then(|c| c.as_u64()) {
+            let (status, _, body) =
+                get(addr, &format!("/api/cell?id={id}&cell={cell}&t=test-token"));
+            assert_eq!(status, 200);
+            let v = json::parse(&String::from_utf8_lossy(&body)).unwrap();
+            assert!(v.get("biome").unwrap().as_str().is_some());
+            assert!(v.get("elevation").unwrap().as_f64().is_some());
+        }
+
+        let (status, _, body) = get(addr, &format!("/api/civs?id={id}&t=test-token"));
+        assert_eq!(status, 200);
+        let v = json::parse(&String::from_utf8_lossy(&body)).unwrap();
+        assert!(v.get("count").unwrap().as_u64().unwrap() >= 2);
+        let civ_id = v
+            .get("civs")
+            .unwrap()
+            .index(0)
+            .unwrap()
+            .get("id")
+            .unwrap()
+            .as_u64()
+            .unwrap();
+        let (status, _, body) = get(addr, &format!("/api/civ?id={id}&civ={civ_id}&t=test-token"));
+        assert_eq!(status, 200);
+        let v = json::parse(&String::from_utf8_lossy(&body)).unwrap();
+        assert!(v.get("civ").unwrap().get("name").is_some());
+
+        let (status, _, body) = get(addr, &format!("/api/timeline?id={id}&t=test-token"));
+        assert_eq!(status, 200);
+        let v = json::parse(&String::from_utf8_lossy(&body)).unwrap();
+        assert!(!v.get("series").unwrap().as_array().unwrap().is_empty());
+
+        let (status, head, body) = get(
+            addr,
+            &format!("/api/export/chronicle.md?id={id}&t=test-token"),
+        );
+        assert_eq!(status, 200);
+        assert!(head.contains("text/markdown"));
+        assert!(String::from_utf8_lossy(&body).contains("# Chronicle of"));
+        let (status, _, body) = get(
+            addr,
+            &format!("/api/export/chronicle.json?id={id}&t=test-token"),
+        );
+        assert_eq!(status, 200);
+        let parsed = json::parse(&String::from_utf8_lossy(&body)).unwrap();
+        assert_eq!(parsed.get("sound").unwrap().as_bool(), Some(true));
+    }
+
+    #[test]
+    fn bad_queries_fail_cleanly() {
+        let (_server, addr) = test_server();
+        let id = start_small(addr);
+        for query in [
+            "id=missing&t=test-token",
+            "id=missing&layer=atlas&t=test-token",
+        ] {
+            let (status, _, _) = get(addr, &format!("/api/world?{query}"));
+            assert_eq!(status, 404);
+        }
+        assert_eq!(
+            get(addr, &format!("/api/chronicle?id={id}&from=x&t=test-token")).0,
+            400
+        );
+        assert_eq!(
+            get(
+                addr,
+                &format!("/api/event?id={id}&event=999999&t=test-token")
+            )
+            .0,
+            404
+        );
+        assert_eq!(
+            get(addr, &format!("/api/cell?id={id}&cell=999999&t=test-token")).0,
+            404
+        );
     }
 
     #[test]
