@@ -264,6 +264,22 @@ impl History {
         self.civs.iter().filter(|c| c.alive)
     }
 
+    /// Recomputes the published hashes from current content. Used by replay
+    /// tests and by `--verify`; the stored hashes are never mutated in place.
+    pub fn recompute_hashes(&self) -> HistoryHashes {
+        let (chronicle, civs, combined) = history_hashes(self);
+        HistoryHashes {
+            chronicle,
+            civs,
+            combined,
+        }
+    }
+
+    /// True when the stored hashes match the content and the chronicle is sound.
+    pub fn verify(&self) -> bool {
+        self.hashes == self.recompute_hashes() && self.is_sound()
+    }
+
     /// Folds the history into a stable hash.
     pub fn hash_into(&self, h: &mut Hasher64) {
         h.write_str("history");
