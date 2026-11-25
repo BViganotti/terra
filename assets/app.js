@@ -30,6 +30,8 @@
     searchTimer: null,
     playing: false,
     playTimer: null,
+    shade: true,
+    rivers: true,
   };
 
   function api(path, query) {
@@ -468,6 +470,8 @@
       year: state.layer === "political" || state.civOverlay ? state.year : undefined,
     };
     if (state.civOverlay) q.civs = 1;
+    if (!state.shade) q.shade = 0;
+    if (!state.rivers) q.rivers = 0;
     return q;
   }
 
@@ -966,6 +970,16 @@
 
   $("civ-overlay").addEventListener("change", () => {
     state.civOverlay = $("civ-overlay").checked;
+    renderMap();
+  });
+
+  $("shade").addEventListener("change", () => {
+    state.shade = $("shade").checked;
+    renderMap();
+  });
+
+  $("rivers").addEventListener("change", () => {
+    state.rivers = $("rivers").checked;
     renderMap();
   });
 
