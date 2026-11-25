@@ -155,6 +155,50 @@ impl Terrain {
         }
     }
 
+    /// Rebuilds coastline-derived fields after erosion changed the surface.
+    ///
+    /// Hydrological erosion moves rock from uplands to river mouths, so the
+    /// land/ocean split and shelf flags must be recomputed before climate and
+    /// biomes are derived. Crustal fields are left untouched: they change on
+    /// tectonic, not human, timescales.
+    pub fn reclassify(&mut self, sphere: &Sphere, elevation: &[f64]) {
+        let n = sphere.len().min(elevation.len());
+        self.elevation.clear();
+        self.elevation.extend_from_slice(&elevation[..n]);
+        self.raw_elevation = self.elevation.iter().map(|&e| e + self.sea_level).collect();
+        let land_count = self.elevation.iter().filter(|&&e| e > 0.0).count();
+        self.land_fraction = land_count as f64 / n.max(1) as f64;
+        self.landmass =
+            sphere.components(|c| self.elevation.get(c as usize).is_some_and(|&e| e > 0.0));
+        self.landmass_count = self
+            .landmass
+            .iter()
+            .filter(|&&m| m != u32::MAX)
+            .map(|&m| m + 1)
+            .max()
+            .unwrap_or(0);
+        self.shelf = vec![false; n];
+        self.coastal = vec![false; n];
+        for i in 0..n {
+            let cell = i as u32;
+            let land = self.elevation[i] > 0.0;
+            if land {
+                self.coastal[i] = sphere
+                    .neighbors(cell)
+                    .iter()
+                    .any(|&nb| self.elevation.get(nb as usize).is_some_and(|&e| e <= 0.0));
+            } else {
+                let near_land = sphere
+                    .neighbors(cell)
+                    .iter()
+                    .any(|&nb| self.elevation.get(nb as usize).is_some_and(|&e| e > 0.0));
+                self.shelf[i] = near_land || self.elevation[i] > -220.0;
+            }
+        }
+        self.crust_km.truncate(n);
+        self.crust_age_myr.truncate(n);
+    }
+
     /// Area of a landmass in steradians.
     pub fn landmass_area(&self, sphere: &Sphere, id: u32) -> f64 {
         let mut a = 0.0;

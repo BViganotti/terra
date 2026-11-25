@@ -20,6 +20,7 @@ pub mod sphere;
 pub mod tectonics;
 pub mod terrain;
 pub mod vec3;
+pub mod world;
 
 /// Semantic version of the simulation model.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
