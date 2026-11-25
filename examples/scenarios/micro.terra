@@ -1,0 +1,11 @@
+# Small and fast, for smoke tests and CI-like checks.
+name = "Pebble"
+note = "A two-subdivision world used by examples and quick manual checks."
+seed = 3
+subdiv = 2
+years = 1000
+plates = 6
+land = 0.3
+erosion = 4
+temperature = 0.0
+precip = 860
