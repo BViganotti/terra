@@ -506,6 +506,9 @@ impl<'a> Parser<'a> {
     }
 
     fn array(&mut self, depth: usize) -> Result<Json, JsonError> {
+        if depth >= MAX_DEPTH {
+            return Err(JsonError::new(self.pos, "nesting limit exceeded"));
+        }
         self.expect(b'[')?;
         self.skip_ws();
         let mut items = Vec::new();
@@ -532,6 +535,9 @@ impl<'a> Parser<'a> {
     }
 
     fn object(&mut self, depth: usize) -> Result<Json, JsonError> {
+        if depth >= MAX_DEPTH {
+            return Err(JsonError::new(self.pos, "nesting limit exceeded"));
+        }
         self.expect(b'{')?;
         self.skip_ws();
         let mut pairs: Vec<(String, Json)> = Vec::new();
