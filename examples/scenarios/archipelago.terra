@@ -1,0 +1,11 @@
+# A drowned world of many islands, which makes trade and isolation matter.
+name = "Thousand Sounds"
+note = "Fourteen plates and little land produce fragmented biomes and fragile societies."
+seed = 123
+subdiv = 4
+years = 5000
+plates = 14
+land = 0.18
+erosion = 8
+temperature = 2.0
+precip = 1100
