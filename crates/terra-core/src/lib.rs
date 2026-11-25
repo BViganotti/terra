@@ -14,6 +14,7 @@ pub mod hash;
 pub mod noise;
 pub mod rng;
 pub mod sphere;
+pub mod tectonics;
 pub mod vec3;
 
 /// Semantic version of the simulation model.
