@@ -246,10 +246,20 @@ pub struct World {
 impl World {
     /// Generates a world. This is a pure function of the sanitized config.
     pub fn generate(config: WorldConfig) -> Self {
+        Self::generate_with(config, |_, _| {})
+    }
+
+    /// Generates a world while reporting coarse progress.
+    ///
+    /// The callback receives a stage name and a fraction in `[0, 1]`. Stages are
+    /// reported after they complete, so a progress bar never claims work that
+    /// has not happened.
+    pub fn generate_with<F: FnMut(&str, f64)>(config: WorldConfig, mut report: F) -> Self {
         let config = config.sanitized();
         let seed = config.seed;
         let sphere = Sphere::new(config.subdiv);
         let name = planet_name(seed);
+        report("grid", 0.03);
 
         let tectonics = tectonics::generate(
             &sphere,
@@ -259,6 +269,7 @@ impl World {
                 ..TectonicsConfig::default()
             },
         );
+        report("plates", 0.12);
         let mut terrain = terrain::build(
             &sphere,
             &tectonics,
@@ -268,6 +279,7 @@ impl World {
                 ..TerrainConfig::default()
             },
         );
+        report("terrain", 0.24);
         let hydrology = Hydrology::build(
             &sphere,
             &terrain.elevation,
@@ -281,6 +293,7 @@ impl World {
             },
         );
         terrain.reclassify(&sphere, &hydrology.elevation);
+        report("hydrology", 0.52);
 
         let ocean: Vec<bool> = terrain.elevation.iter().map(|&e| e <= 0.0).collect();
         let lake: Vec<bool> = hydrology
@@ -306,6 +319,7 @@ impl World {
         // Discharge now uses the precipitation field, not uniform runoff.
         let mut hydrology = hydrology;
         hydrology.apply_precipitation(&sphere, &climate.moisture.precip_mm);
+        report("climate", 0.72);
 
         let area_m2: Vec<f64> = (0..sphere.len())
             .map(|i| sphere.cell_area(i as u32) * 6_371_000.0 * 6_371_000.0)
@@ -329,6 +343,7 @@ impl World {
         };
         let biomes = biome::classify(&sphere, ctx, seed);
         let ecosystems = biome::ecosystem::build(&sphere, ctx, &biomes, seed);
+        report("biosphere", 0.9);
 
         let stats = compute_stats(
             &sphere,
