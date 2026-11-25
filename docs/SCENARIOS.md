@@ -69,7 +69,8 @@ of malformed documents.
 2. Preset, if any.
 3. Explicit keys, in any order.
 4. The launcher or Studio may override `seed`, `years`, `subdiv`, `civs`,
-   `aggression` and `expansion`.
+   `aggression` and `expansion`. In the Studio, a custom scenario keeps its own
+   subdivision; the header controls override seed, span and peoples.
 5. `WorldConfig::sanitized` clamps everything into the supported range.
 
 Scenario parsing itself rejects out-of-range values instead of clamping, so a

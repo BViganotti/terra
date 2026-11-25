@@ -28,6 +28,8 @@
     timeline: null,
     yearTimer: null,
     searchTimer: null,
+    playing: false,
+    playTimer: null,
   };
 
   function api(path, query) {
@@ -103,17 +105,77 @@
       toast("This page needs its Studio token. Reopen the URL printed by the launcher.");
       return;
     }
-    const seed = Number($("seed").value) >>> 0;
-    const years = Number($("years").value);
-    const preset = $("preset").value;
-    const civs = Number($("civs").value);
-    const body = { seed, years, civs, subdiv: 5 };
-    if (preset) body.preset = preset;
-    await launchWorld(body);
+    await launchWorld(requestBody());
   });
 
+  function requestBody() {
+    const body = {
+      seed: Number($("seed").value) >>> 0,
+      years: Number($("years").value),
+      civs: Number($("civs").value),
+      subdiv: 5,
+    };
+    const scenarioText = $("scenario").value.trim();
+    if (scenarioText) {
+      body.scenario = scenarioText;
+      // A scenario carries its own resolution; the Studio's default is 5.
+      delete body.subdiv;
+    } else if ($("preset").value) {
+      body.preset = $("preset").value;
+    }
+    return body;
+  }
+
+  function stopPlayback() {
+    if (state.playTimer) {
+      clearInterval(state.playTimer);
+      state.playTimer = null;
+    }
+    if (state.playing) {
+      state.playing = false;
+      const btn = $("play");
+      if (btn) btn.textContent = "Play";
+    }
+  }
+
+  function syncYearUI() {
+    $("year").value = state.year;
+    $("year-label").textContent = fmt(state.year);
+  }
+
+  function startPlayback() {
+    if (!state.world || !state.meta) return;
+    if (state.playing) {
+      stopPlayback();
+      return;
+    }
+    if (state.layer !== "political") {
+      const btn = Array.from(document.querySelectorAll("#layers button"))
+        .find((b) => b.dataset.layer === "political");
+      if (btn) btn.click();
+    }
+    state.playing = true;
+    $("play").textContent = "Stop";
+    state.year = 0;
+    syncYearUI();
+    renderMap();
+    const step = Math.max(25, Math.round(state.meta.years / 80));
+    state.playTimer = setInterval(() => {
+      if (!state.world || state.year >= state.meta.years) {
+        stopPlayback();
+        return;
+      }
+      state.year = Math.min(state.meta.years, state.year + step);
+      syncYearUI();
+      renderMap();
+    }, 260);
+  }
+
   async function launchWorld(body) {
+    stopPlayback();
     $("generate").disabled = true;
+    $("play").disabled = true;
+    $("share").disabled = true;
     $("map-empty").hidden = true;
     $("progress").hidden = false;
     $("progress-bar").style.width = "2%";
@@ -220,6 +282,8 @@
       renderStats(meta);
       $("map-empty").hidden = true;
       $("download-map").disabled = false;
+      $("play").disabled = false;
+      $("share").disabled = false;
       $("export-md").disabled = false;
       $("export-json").disabled = false;
       $("export-csv").disabled = false;
@@ -231,6 +295,7 @@
         meta.hash.slice(0, 16)
       );
       finishGeneration();
+      history.replaceState(null, "", permalink());
       await Promise.all([renderMap(), loadChronicle(true), loadTimeline()]);
     } catch (err) {
       finishGeneration();
@@ -251,6 +316,7 @@
       btn.dataset.layer = layer.code;
       btn.className = layer.code === state.layer ? "active" : "";
       btn.addEventListener("click", () => {
+        if (state.playing && layer.code !== "political") stopPlayback();
         state.layer = layer.code;
         for (const b of nav.querySelectorAll("button")) b.classList.toggle("active", b === btn);
         renderLegend(layer);
@@ -824,11 +890,52 @@
   /* --------------------------------------------------------------- year ui */
 
   $("year").addEventListener("input", () => {
+    if (state.playing) stopPlayback();
     state.year = Number($("year").value);
-    $("year-label").textContent = fmt(state.year);
+    syncYearUI();
     if (state.layer === "political" || state.civOverlay) {
       clearTimeout(state.yearTimer);
       state.yearTimer = setTimeout(() => renderMap(), 140);
+    }
+  });
+
+  $("play").addEventListener("click", startPlayback);
+
+  $("random-seed").addEventListener("click", () => {
+    stopPlayback();
+    const buf = new Uint32Array(1);
+    if (window.crypto && window.crypto.getRandomValues) {
+      window.crypto.getRandomValues(buf);
+      $("seed").value = String(buf[0]);
+    } else {
+      $("seed").value = String(Math.floor(Math.random() * 4294967296));
+    }
+    setStatus("New seed rolled. Forge the world to explore it.");
+  });
+
+  $("clear-scenario").addEventListener("click", () => {
+    $("scenario").value = "";
+    toast("Scenario cleared. The preset controls apply.");
+  });
+
+  function permalink() {
+    const url = new URL(location.origin + "/");
+    url.searchParams.set("t", token);
+    url.searchParams.set("seed", String(Number($("seed").value) >>> 0));
+    url.searchParams.set("years", $("years").value);
+    url.searchParams.set("civs", $("civs").value);
+    if ($("preset").value) url.searchParams.set("preset", $("preset").value);
+    url.searchParams.set("auto", "1");
+    return url.toString();
+  }
+
+  $("share").addEventListener("click", async () => {
+    const link = permalink();
+    try {
+      await navigator.clipboard.writeText(link);
+      toast("Replay link copied. It regenerates this seed and span.");
+    } catch (_) {
+      window.prompt("Copy this replay link:", link);
     }
   });
 
@@ -892,8 +999,20 @@
     if ([1000, 3000, 6000, 10000, 20000].includes(yearsParam)) {
       $("years").value = String(yearsParam);
     }
-    $("year").max = 10000;
+    const presetParam = params.get("preset") || "";
+    if (["temperate", "arid", "icehouse", "archipelago", "pangaea"].includes(presetParam)) {
+      $("preset").value = presetParam;
+    }
+    const civsParam = Number(params.get("civs"));
+    if ([4, 6, 8, 10, 12].includes(civsParam)) {
+      $("civs").value = String(civsParam);
+    }
+    $("year").max = yearsParam || 10000;
     drawMap();
+    if (params.get("auto") === "1" && params.has("seed") && token) {
+      // A shared replay link forges immediately.
+      await launchWorld(requestBody());
+    }
   }
 
   boot();
