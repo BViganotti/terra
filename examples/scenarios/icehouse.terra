@@ -1,0 +1,11 @@
+# A cold world: ice sheets reach mid-latitudes and growing seasons are short.
+name = "Long Winter"
+note = "Glacial coastlines and boreal refugia; history is slower and harsher."
+seed = 5
+subdiv = 4
+years = 7000
+plates = 10
+land = 0.36
+erosion = 10
+temperature = -8.0
+precip = 620
