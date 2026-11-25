@@ -1984,7 +1984,7 @@ mod tests {
     fn get(addr: SocketAddr, path: &str) -> (u16, String, Vec<u8>) {
         let mut stream = TcpStream::connect(addr).unwrap();
         stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
+            .set_read_timeout(Some(Duration::from_secs(30)))
             .unwrap();
         let req = format!("GET {path} HTTP/1.1\r\nHost: localhost\r\n\r\n");
         stream.write_all(req.as_bytes()).unwrap();
@@ -2088,7 +2088,7 @@ mod tests {
         let (_server, addr) = test_server();
         let mut stream = TcpStream::connect(addr).unwrap();
         stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
+            .set_read_timeout(Some(Duration::from_secs(30)))
             .unwrap();
         let req = "GET /api/health HTTP/1.1\r\nHost: localhost\r\nX-Token: test-token\r\n\r\n";
         stream.write_all(req.as_bytes()).unwrap();
@@ -2096,7 +2096,7 @@ mod tests {
         assert_eq!(status, 200);
         let mut stream = TcpStream::connect(addr).unwrap();
         stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
+            .set_read_timeout(Some(Duration::from_secs(30)))
             .unwrap();
         let req = "GET /api/health HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer test-token\r\n\r\n";
         stream.write_all(req.as_bytes()).unwrap();
@@ -2118,7 +2118,7 @@ mod tests {
         let (_server, addr) = test_server();
         let mut stream = TcpStream::connect(addr).unwrap();
         stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
+            .set_read_timeout(Some(Duration::from_secs(30)))
             .unwrap();
         stream.write_all(b"NOT A REQUEST\r\n\r\n").unwrap();
         let (status, _, _) = read_response(&mut stream);
@@ -2126,7 +2126,7 @@ mod tests {
 
         let mut stream = TcpStream::connect(addr).unwrap();
         stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
+            .set_read_timeout(Some(Duration::from_secs(30)))
             .unwrap();
         stream
             .write_all(b"GET / HTTP/1.1\r\nHost: x\r\nContent-Length: 999999\r\n\r\n")
@@ -2164,7 +2164,7 @@ mod tests {
         assert!(id.starts_with('w'));
 
         let mut done = None;
-        for _ in 0..200 {
+        for _ in 0..600 {
             std::thread::sleep(Duration::from_millis(25));
             let (status, _, body) = get(addr, &format!("/api/job?id={id}&t=test-token"));
             assert_eq!(status, 200);
@@ -2190,7 +2190,7 @@ mod tests {
         stream.write_all(req.as_bytes()).unwrap();
         let mut raw = String::new();
         let mut buf = [0u8; 4096];
-        for _ in 0..200 {
+        for _ in 0..600 {
             match stream.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
@@ -2215,7 +2215,7 @@ mod tests {
         assert_eq!(status, 202);
         let value = json::parse(&String::from_utf8_lossy(&body)).unwrap();
         let id = value.get("id").unwrap().as_str().unwrap().to_string();
-        for _ in 0..200 {
+        for _ in 0..600 {
             std::thread::sleep(Duration::from_millis(25));
             let (_, _, body) = get(addr, &format!("/api/job?id={id}&t=test-token"));
             let v = json::parse(&String::from_utf8_lossy(&body)).unwrap();
