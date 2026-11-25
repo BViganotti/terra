@@ -3,34 +3,173 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Terra — a seeded planet</title>
+<meta name="color-scheme" content="dark">
+<title>Terra — a seeded planet with a history</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
 <div id="app">
   <header class="top">
-    <div class="brand"><span class="orb"></span><h1>Terra</h1></div>
-    <p class="tagline">a seeded planet with a history</p>
-    <div class="controls">
-      <label>Seed <input id="seed" type="number" min="0" max="4294967295" value="42"></label>
-      <label>Years <select id="years"><option>2000</option><option>5000</option><option selected>10000</option></select></label>
-      <button id="generate" type="button">Generate</button>
+    <div class="brand">
+      <span class="orb" aria-hidden="true"></span>
+      <div>
+        <h1>Terra</h1>
+        <p class="tagline">a seeded planet with a history</p>
+      </div>
     </div>
+    <form id="launch" class="controls" autocomplete="off">
+      <label>Seed
+        <input id="seed" type="number" min="0" max="4294967295" step="1" value="42">
+      </label>
+      <label>Scenario
+        <select id="preset">
+          <option value="">Temperate (default)</option>
+          <option value="arid">Arid</option>
+          <option value="icehouse">Icehouse</option>
+          <option value="archipelago">Archipelago</option>
+          <option value="pangaea">Pangaea</option>
+        </select>
+      </label>
+      <label>Years
+        <select id="years">
+          <option value="1000">1,000</option>
+          <option value="3000">3,000</option>
+          <option value="6000">6,000</option>
+          <option value="10000" selected>10,000</option>
+          <option value="20000">20,000</option>
+        </select>
+      </label>
+      <label>Peoples
+        <select id="civs">
+          <option>4</option>
+          <option>6</option>
+          <option selected>8</option>
+          <option>10</option>
+          <option>12</option>
+        </select>
+      </label>
+      <button id="generate" type="submit">Forge world</button>
+    </form>
   </header>
-  <main id="main">
-    <section id="stage">
-      <div id="progress" class="progress" hidden><div id="bar"></div><span id="stage-label">warming the mantle</span></div>
-      <div class="canvas-wrap"><canvas id="map" width="1024" height="512"></canvas></div>
-      <nav id="layers" class="layers"></nav>
-      <div id="legend" class="legend"></div>
+
+  <div id="statusbar" class="statusbar" role="status" aria-live="polite">
+    <span id="status-text">Ready. Forge a world to begin.</span>
+    <span id="status-hash" class="mono"></span>
+  </div>
+
+  <main class="layout">
+    <section class="stage" aria-label="World map">
+      <div class="toolbar">
+        <nav id="layers" class="layers" aria-label="Map layers"></nav>
+        <div class="map-tools">
+          <label class="year-control" title="Political year">
+            Year <input id="year" type="range" min="0" max="10000" step="10" value="10000">
+            <output id="year-label">10,000</output>
+          </label>
+          <label class="check" title="Draw civilization territory over this layer">
+            <input id="civ-overlay" type="checkbox"> Civs
+          </label>
+          <div class="zoom-buttons">
+            <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+            <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+            <button id="zoom-fit" type="button">Fit</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="progress" class="progress" hidden>
+        <div class="track"><div id="progress-bar"></div></div>
+        <span id="progress-label">queued</span>
+      </div>
+
+      <div id="canvas-wrap" class="canvas-wrap">
+        <canvas id="map" width="1024" height="512" aria-label="Rendered world map"></canvas>
+        <div id="map-empty" class="map-empty">
+          <p>No world yet.</p>
+          <p class="muted">Set a seed and forge a planet. Geology, climate and history take a few seconds.</p>
+        </div>
+        <div id="map-loading" class="map-loading" hidden>painting…</div>
+      </div>
+
+      <div class="stage-footer">
+        <div id="legend" class="legend"></div>
+        <div class="stage-actions">
+          <button id="download-map" type="button" class="ghost" disabled>Download map</button>
+        </div>
+      </div>
     </section>
-    <aside id="side">
-      <div id="inspector" class="panel"><h2>Inspector</h2><p class="muted">Click the map to read a cell.</p></div>
-      <div class="panel"><h2>World</h2><dl id="world-stats"></dl></div>
+
+    <aside class="side" aria-label="World details">
+      <section class="panel">
+        <h2>Inspector</h2>
+        <div id="inspector" class="inspector muted">
+          Click anywhere on the map to read the cell under the cursor.
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>World</h2>
+        <dl id="world-stats" class="stats">
+          <dt>status</dt><dd>unformed</dd>
+        </dl>
+      </section>
+
+      <section class="panel">
+        <h2>Peoples</h2>
+        <div id="civ-list" class="civ-list muted">No civilizations yet.</div>
+      </section>
     </aside>
   </main>
+
+  <section class="chronicle" aria-label="Chronicle">
+    <div class="chronicle-head">
+      <div>
+        <h2>The Chronicle</h2>
+        <p class="muted" id="chronicle-sub">Every event cites the state or the earlier events that caused it.</p>
+      </div>
+      <div class="chronicle-actions">
+        <button id="export-md" type="button" class="ghost" disabled>Export Markdown</button>
+        <button id="export-json" type="button" class="ghost" disabled>Export JSON</button>
+      </div>
+    </div>
+
+    <div class="chronicle-filters">
+      <label>Kind <select id="filter-kind"><option value="all">All events</option></select></label>
+      <label>People <select id="filter-civ"><option value="all">Everyone</option></select></label>
+      <label>Search <input id="filter-q" type="search" placeholder="famine, war, river…"></label>
+      <label>From <input id="filter-from" type="number" min="0" step="10" placeholder="0"></label>
+      <label>To <input id="filter-to" type="number" min="0" step="10" placeholder="10000"></label>
+      <button id="filter-reset" type="button" class="ghost">Reset</button>
+    </div>
+
+    <div class="timeline-wrap">
+      <canvas id="timeline" width="1200" height="70" aria-label="Event density over time"></canvas>
+      <div class="timeline-caption"><span>year 0</span><span id="timeline-mid"></span><span id="timeline-end">year 10,000</span></div>
+    </div>
+
+    <div class="chronicle-body">
+      <div class="event-column">
+        <div id="event-count" class="muted small"></div>
+        <ol id="event-list" class="event-list"></ol>
+        <div id="event-more" class="more" hidden><button id="load-more" type="button" class="ghost">Load more</button></div>
+      </div>
+
+      <aside id="cause-panel" class="cause-panel panel">
+        <h2>Cause &amp; effect</h2>
+        <div id="cause-body" class="muted">
+          Select an event to trace its causes back to physical facts.
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span>Terra — deterministic worlds, traceable history. Standard library only, loopback only.</span>
+    <span id="version" class="mono"></span>
+  </footer>
 </div>
+<div id="toast" class="toast" hidden></div>
 <script src="/app.js"></script>
 </body>
 </html>
