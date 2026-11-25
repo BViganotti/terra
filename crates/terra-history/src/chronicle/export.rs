@@ -188,6 +188,59 @@ fn escape_markdown(s: &str) -> String {
     s.replace('|', "\\|").replace('\n', " ").replace('\r', "")
 }
 
+/// Escapes a CSV field by quoting it and doubling embedded quotes.
+fn csv_field(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\"\""),
+            '\n' | '\r' => out.push(' '),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// Serializes a chronicle to CSV, one row per event.
+///
+/// Columns: `id, year, kind, category, civ, cell, title, detail, causes`.
+/// Text fields are quoted; cause descriptions are joined with ` | `.
+pub fn csv(planet: &str, chronicle: &Chronicle) -> String {
+    let mut out = String::with_capacity(chronicle.len() * 220 + 256);
+    let _ = writeln!(
+        out,
+        "# Terra chronicle for {planet} ({} events)",
+        chronicle.len()
+    );
+    out.push_str("id,year,kind,category,civ,cell,title,detail,causes\n");
+    for e in chronicle.events() {
+        let causes = e
+            .causes
+            .iter()
+            .map(|c| c.describe(chronicle))
+            .collect::<Vec<_>>()
+            .join(" | ");
+        let civ = e.civ.map(|c| c.to_string()).unwrap_or_default();
+        let cell = e.cell.map(|c| c.to_string()).unwrap_or_default();
+        let _ = writeln!(
+            out,
+            "{},{},{},{},{},{},{},{},{}",
+            e.id,
+            e.year,
+            e.kind.code(),
+            e.kind.category(),
+            civ,
+            cell,
+            csv_field(&e.title),
+            csv_field(&e.detail),
+            csv_field(&causes)
+        );
+    }
+    out
+}
+
 /// A compact list of the most recent events, for status panels.
 pub fn recent(chronicle: &Chronicle, count: usize) -> String {
     let count = count.clamp(1, 200);
@@ -321,6 +374,35 @@ mod tests {
         assert_eq!(json_escape("é"), "é");
         assert_eq!(json_escape("\u{1}"), "\\u0001");
         assert_eq!(json_escape("a\\b"), "a\\\\b");
+    }
+
+    #[test]
+    fn csv_has_a_header_and_one_row_per_event() {
+        let c = sample();
+        let text = csv("Aster", &c);
+        let lines: Vec<&str> = text.lines().filter(|l| !l.starts_with('#')).collect();
+        assert_eq!(lines.len(), 3);
+        assert!(lines[0].starts_with("id,year,kind,category,civ,cell"));
+        assert!(lines[1].contains("world_formed"));
+        assert!(lines[2].contains("First city"));
+        assert!(text.contains("# Terra chronicle for Aster (2 events)"));
+    }
+
+    #[test]
+    fn csv_quotes_quotes_and_flattens_newlines() {
+        let c = sample();
+        let text = csv("Aster", &c);
+        assert!(text.contains("\"A \"\"new\"\" world\""));
+        assert!(!text.contains("Line one\nline two"));
+        assert!(text.contains("Line one line two"));
+    }
+
+    #[test]
+    fn empty_csv_is_still_well_formed() {
+        let c = Chronicle::new();
+        let text = csv("Void", &c);
+        assert!(text.contains("id,year,kind"));
+        assert_eq!(text.lines().filter(|l| !l.starts_with('#')).count(), 1);
     }
 
     #[test]
