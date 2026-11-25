@@ -1011,6 +1011,14 @@
     url.searchParams.set("civs", $("civs").value);
     if ($("preset").value) url.searchParams.set("preset", $("preset").value);
     url.searchParams.set("auto", "1");
+    const scenarioText = $("scenario").value.trim();
+    if (scenarioText) {
+      const encoded = encodeURIComponent(scenarioText);
+      // Keep the link within practical browser/clipboard limits. A scenario is
+      // capped at 8 KiB, but percent-encoding expands it; large documents are
+      // intentionally not embedded.
+      if (encoded.length <= 12_000) url.hash = "scenario=" + encoded;
+    }
     return url.toString();
   }
 
@@ -1133,6 +1141,15 @@
       $("civs").value = String(civsParam);
     }
     $("year").max = yearsParam || 10000;
+    const hash = location.hash.startsWith("#") ? location.hash.slice(1) : "";
+    if (hash.startsWith("scenario=")) {
+      try {
+        $("scenario").value = decodeURIComponent(hash.slice("scenario=".length));
+        $("scenario-box").open = true;
+      } catch (_) {
+        // Ignore a malformed fragment; the controls still work.
+      }
+    }
     drawMap();
     loadExamples();
     if (params.get("auto") === "1" && params.has("seed") && token) {
