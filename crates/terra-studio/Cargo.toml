@@ -1,0 +1,20 @@
+[package]
+name = "terra-studio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Local browser Studio, HTTP/SSE server, PNG renderer and launcher for Terra"
+
+[dependencies]
+terra-core = { path = "../terra-core" }
+terra-history = { path = "../terra-history" }
+
+[[bin]]
+name = "terra"
+path = "src/main.rs"
+
+[lints]
+workspace = true

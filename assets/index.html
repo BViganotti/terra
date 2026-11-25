@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terra — a seeded planet</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div class="brand"><span class="orb"></span><h1>Terra</h1></div>
+    <p class="tagline">a seeded planet with a history</p>
+    <div class="controls">
+      <label>Seed <input id="seed" type="number" min="0" max="4294967295" value="42"></label>
+      <label>Years <select id="years"><option>2000</option><option>5000</option><option selected>10000</option></select></label>
+      <button id="generate" type="button">Generate</button>
+    </div>
+  </header>
+  <main id="main">
+    <section id="stage">
+      <div id="progress" class="progress" hidden><div id="bar"></div><span id="stage-label">warming the mantle</span></div>
+      <div class="canvas-wrap"><canvas id="map" width="1024" height="512"></canvas></div>
+      <nav id="layers" class="layers"></nav>
+      <div id="legend" class="legend"></div>
+    </section>
+    <aside id="side">
+      <div id="inspector" class="panel"><h2>Inspector</h2><p class="muted">Click the map to read a cell.</p></div>
+      <div class="panel"><h2>World</h2><dl id="world-stats"></dl></div>
+    </aside>
+  </main>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>
