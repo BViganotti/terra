@@ -222,6 +222,8 @@
       $("download-map").disabled = false;
       $("export-md").disabled = false;
       $("export-json").disabled = false;
+      $("export-csv").disabled = false;
+      $("export-world").disabled = false;
       $("cause-body").className = "muted";
       $("cause-body").textContent = "Select an event to trace its causes back to physical facts.";
       setStatus(
@@ -856,6 +858,12 @@
   });
   $("export-json").addEventListener("click", () => {
     if (state.world) location.href = api("/api/export/chronicle.json", { id: state.world });
+  });
+  $("export-csv").addEventListener("click", () => {
+    if (state.world) location.href = api("/api/export/chronicle.csv", { id: state.world });
+  });
+  $("export-world").addEventListener("click", () => {
+    if (state.world) location.href = api("/api/export/world.json", { id: state.world });
   });
 
   /* ----------------------------------------------------------------- boot */
