@@ -34,11 +34,11 @@ a headless library. It contains:
 
 | Category | LOC |
 |---|---:|
-| Production Rust (`crates/*/src`, `fuzz`, `bench`) | 15,739 |
-| Rust tests (unit + integration) | 6,923 |
-| Rust total | 22,662 |
-| Embedded UI (HTML/CSS/JS) | 1,840 |
-| Playwright test (Python) | 163 |
+| Production Rust (`crates/*/src`, `fuzz`, `bench`) | 15,745 |
+| Rust tests (unit + integration) | 7,548 |
+| Rust total | 23,293 |
+| Embedded UI (HTML/CSS/JS) | 1,857 |
+| Playwright tests (Python) | 296 |
 
 Production Rust is inside the 14–16k target. Total code is above the target
 because the test suite is large and the benchmark/fuzz harnesses are real
@@ -47,27 +47,28 @@ is in section 9.
 
 ### Commits
 
-- 90 commits before this report; 91 including it.
+- 105 commits including this report.
 - Every commit was built and tested locally before committing.
 - No CI is configured, by requirement.
 - Repository: <https://github.com/BViganotti/terra>, branch `master`.
 
 ### Tests
 
-376 tests, split as:
+403 tests, split as:
 
 | Crate | Tests |
 |---|---:|
-| `terra-core` | 243 |
-| `terra-history` | 73 |
-| `terra-studio` | 60 |
+| `terra-core` | 255 |
+| `terra-history` | 77 |
+| `terra-studio` | 71 |
 
-17 integration test files plus a shared helper, and unit modules across 56 Rust source files.
+23 integration test files plus a shared helper, and unit modules across the
+workspace's Rust source files.
 
 Measured wall time on the development machine:
 
-- `cargo test --workspace`: 9.11 s
-- `cargo test --workspace --release`: 1.78 s
+- `cargo test --workspace`: 10.43 s
+- `cargo test --workspace --release`: 1.94 s
 
 Both suites pass in full.
 
@@ -77,7 +78,7 @@ Measured with `cargo llvm-cov --workspace --tests --summary-only`:
 
 | Scope | Region | Function | Line |
 |---|---:|---:|---:|
-| Workspace total | 89.50% | 87.04% | 89.05% |
+| Workspace total | 89.54% | 87.04% | 89.13% |
 
 Coverage includes untested fuzz/bench binaries, so library coverage is higher.
 Details and caveats: `docs/COVERAGE.md`.
@@ -109,7 +110,7 @@ Details and caveats: `docs/COVERAGE.md`.
 | 10,000-year run | `terra-history/tests/long_run.rs`; release simulation is milliseconds | Pass |
 | Rise and fall coverage | `terra-history/tests/kinds.rs` over a seed sweep | Pass |
 | Ownership consistency | `terra-history/tests/owners.rs` checks every snapshot | Pass |
-| Studio demo in Playwright | `tests/studio/test_studio.py` | Pass |
+| Studio demo in Playwright | `tests/studio/test_studio.py` and `test_features.py` | Pass |
 | HTTP API | `terra-studio/tests/http_api.rs` | Pass |
 | PNG validity | `terra-studio/tests/render_layers.rs` verifies chunks, CRCs, deflate and pixels | Pass |
 
@@ -151,7 +152,11 @@ cause panel: ok
 filters and paging: ok
 download: Seramonionya-political.png
 STUDIO E2E PASSED
+STUDIO FEATURE E2E PASSED
 ```
+
+The feature test covers example loading, a custom micro scenario, playback, the
+people detail panel, layer toggles, the share link and replay in a fresh page.
 
 ## 4. Benchmarks (measured)
 
@@ -216,7 +221,7 @@ Details: `docs/SECURITY.md`.
 ## 8. Definition of Done checklist
 
 1. **Release build with zero warnings** — verified.
-2. **Debug and release test suites pass** — 376 tests each, verified.
+2. **Debug and release test suites pass** — 403 tests each, verified.
 3. **Project acceptance tests pass** — table in section 3.
 4. **1,000 malformed inputs fail cleanly** — verified by test and fuzz campaign.
 5. **Browser Studio works via Playwright** — verified, including forge, layers,
@@ -230,8 +235,8 @@ Details: `docs/SECURITY.md`.
 
 ## 9. Gaps and honest limitations
 
-- **Total LOC above target.** Production Rust is 15,739 lines, inside the
-  14–16k target. Including 6,923 lines of Rust tests and 1,840 lines of UI, the
+- **Total LOC above target.** Production Rust is 15,745 lines, inside the
+  14–16k target. Including 7,548 lines of Rust tests and 1,857 lines of UI, the
   repository is larger. The test suite is the main reason. Cutting it to hit a
   total line count would reduce evidence, not improve the product.
 - **Fixed plate partition.** Plates have motion and evolving stress, but cells do
@@ -290,4 +295,5 @@ cargo run --release -p terra-bench
 
 cargo run --release -p terra-studio          # opens the Studio
 python3 tests/studio/test_studio.py          # development-only browser test
+python3 tests/studio/test_features.py        # playback, scenarios, share
 ```
