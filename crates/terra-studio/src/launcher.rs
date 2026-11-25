@@ -20,6 +20,10 @@ use crate::server::{self, ServerConfig};
 pub struct Args {
     /// Print a world report and exit.
     pub report: bool,
+    /// Generate twice and compare hashes.
+    pub verify: bool,
+    /// Validate a scenario file and print its canonical form.
+    pub validate: bool,
     /// Do not open a browser.
     pub no_open: bool,
     /// Explicit port; zero picks a free port.
@@ -47,6 +51,11 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Args, Strin
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--report" | "--headless" => out.report = true,
+            "--verify" => out.verify = true,
+            "--validate-scenario" => {
+                out.validate = true;
+                out.scenario = Some(iter.next().ok_or("--validate-scenario needs a path")?);
+            }
             "--no-open" => out.no_open = true,
             "--help" | "-h" => out.help = true,
             "--port" => {
@@ -95,6 +104,12 @@ pub fn launch() -> io::Result<()> {
         println!("{}", help_text());
         return Ok(());
     }
+    if args.validate {
+        return validate(&args);
+    }
+    if args.verify {
+        return verify(&args);
+    }
     if args.report {
         return report(&args);
     }
@@ -110,6 +125,57 @@ pub fn launch() -> io::Result<()> {
     }
     loop {
         std::thread::park();
+    }
+}
+
+fn validate(args: &Args) -> io::Result<()> {
+    let path = args
+        .scenario
+        .as_ref()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing scenario path"))?;
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, format!("{path}: {e}")))?;
+    let scenario = terra_core::scenario::parse(&text)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, format!("{path}: {e}")))?;
+    scenario
+        .validate()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, format!("{path}: {e}")))?;
+    print!("{}", scenario.to_text());
+    Ok(())
+}
+
+fn verify(args: &Args) -> io::Result<()> {
+    let (world_cfg, history_cfg) =
+        configs(args).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let first_world = World::generate(world_cfg.clone());
+    let first_history = simulate(&first_world, history_cfg);
+    let second_world = World::generate(world_cfg);
+    let second_history = simulate(&second_world, history_cfg);
+    let world_ok = first_world.hashes == second_world.hashes;
+    let history_ok = first_history.hashes == second_history.hashes;
+    let sound = first_history.is_sound() && second_history.is_sound();
+    let verified = first_history.verify() && second_history.verify();
+    println!(
+        "{{\"worldHash\":\"{}\",\"chronicleHash\":\"{}\",\"worldMatch\":{},\"historyMatch\":{},\"sound\":{},\"verified\":{},\"status\":\"{}\"}}",
+        first_world.hashes.combined,
+        first_history.hashes.chronicle,
+        world_ok,
+        history_ok,
+        sound,
+        verified,
+        if world_ok && history_ok && sound && verified {
+            "pass"
+        } else {
+            "fail"
+        }
+    );
+    if world_ok && history_ok && sound && verified {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            "replay verification failed",
+        ))
     }
 }
 
@@ -214,6 +280,8 @@ fn help_text() -> String {
      Default: start the loopback server and open the browser.\n\n\
      Options:\n\
        --report            generate once, print a JSON report, exit\n\
+       --verify            generate twice, compare hashes, exit\n\
+       --validate-scenario PATH  parse and print a canonical scenario\n\
        --seed N            world seed (default 42)\n\
        --years N           historical span, 100..20000 (default 10000)\n\
        --subdiv N          icosphere level, 2..5 (default 5)\n\
@@ -281,6 +349,20 @@ mod tests {
         assert_eq!(a.preset.as_deref(), Some("arid"));
         assert!(a.report);
         assert!(a.no_open);
+        assert!(!a.verify);
+    }
+
+    #[test]
+    fn parses_verify_and_validation_flags() {
+        let a = args(&["--verify", "--seed", "3"]).unwrap();
+        assert!(a.verify);
+        let b = args(&["--validate-scenario", "examples/scenarios/temperate.terra"]).unwrap();
+        assert!(b.validate);
+        assert_eq!(
+            b.scenario.as_deref(),
+            Some("examples/scenarios/temperate.terra")
+        );
+        assert!(args(&["--validate-scenario"]).is_err());
     }
 
     #[test]
