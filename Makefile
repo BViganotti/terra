@@ -1,4 +1,4 @@
-.PHONY: build test test-rel fuzz bench studio fmt clean check
+.PHONY: build test test-rel fuzz bench studio e2e coverage fmt clean check
 
 build:
 	cargo build --release
@@ -17,6 +17,13 @@ fuzz:
 
 bench:
 	cargo run --release -p terra-bench
+
+e2e:
+	cargo build --release -p terra-studio
+	python3 tests/studio/test_studio.py
+
+coverage:
+	cargo llvm-cov --workspace --tests --summary-only
 
 studio:
 	cargo run --release -p terra-studio

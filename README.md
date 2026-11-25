@@ -98,8 +98,14 @@ Supporting material:
 - [docs/TESTING.md](docs/TESTING.md) — suite and acceptance mapping.
 - [docs/PERFORMANCE.md](docs/PERFORMANCE.md) — measured benchmarks.
 - [docs/SCENARIOS.md](docs/SCENARIOS.md) — scenario format.
+- [docs/EVENTS.md](docs/EVENTS.md) — every event kind, its causes and effects.
+- [docs/RENDERING.md](docs/RENDERING.md) — projection, palettes, political maps, PNG.
+- [docs/SECURITY.md](docs/SECURITY.md) — local threat model and hardening.
+- [docs/COVERAGE.md](docs/COVERAGE.md) — measured llvm-cov results and caveats.
+- [docs/VERIFICATION.md](docs/VERIFICATION.md) — acceptance evidence matrix.
+- [docs/GLOSSARY.md](docs/GLOSSARY.md) — terms used across the simulation.
 - [LIMITATIONS.md](LIMITATIONS.md) — what is approximate, and why.
-- [FINAL_REPORT.md](FINAL_REPORT.md) — LOC, commits, tests, benchmarks, gaps.
+- [FINAL_REPORT.md](FINAL_REPORT.md) — LOC, commits, tests, coverage, benchmarks, gaps.
 
 ## Studio tour
 
@@ -139,6 +145,8 @@ make test-rel    # release tests
 make fuzz        # malformed-input campaign
 make bench       # timing harness
 make studio      # launch the Studio
+make e2e         # Playwright Studio test (development-only)
+make coverage    # llvm-cov summary (development-only)
 ```
 
 The Studio end-to-end test uses Playwright (development-only):
