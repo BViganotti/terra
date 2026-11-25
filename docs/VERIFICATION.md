@@ -50,9 +50,9 @@ Full table in `docs/PERFORMANCE.md`.
 
 `cargo llvm-cov --workspace --tests --summary-only`:
 
-- regions **89.50%**;
+- regions **89.54%**;
 - functions **87.04%**;
-- lines **89.05%**.
+- lines **89.13%**.
 
 Full table and caveats in `docs/COVERAGE.md`.
 

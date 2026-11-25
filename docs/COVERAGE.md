@@ -14,11 +14,11 @@ workspace total is lower than the library totals.
 
 ## Result
 
-Measured after the full acceptance suite was in place:
+Measured after the full acceptance suite (403 tests) was in place:
 
 | Scope | Region | Function | Line |
 |---|---:|---:|---:|
-| Workspace total | 89.50% | 87.04% | 89.05% |
+| Workspace total | 89.54% | 87.04% | 89.13% |
 
 Selected modules:
 
@@ -39,7 +39,7 @@ Selected modules:
 | `terra-studio/src/render.rs` | 95.36% |
 | `terra-studio/src/png.rs` | 92.43% |
 | `terra-studio/src/json.rs` | 91.70% |
-| `terra-studio/src/server.rs` | 82.57% |
+| `terra-studio/src/server.rs` | 83.22% |
 
 ## What is not covered
 
