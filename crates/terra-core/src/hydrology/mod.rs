@@ -6,9 +6,11 @@
 //! transports sediment and deposits it in low-gradient reaches and at river
 //! mouths. All bookkeeping is in cubic meters so sediment mass can be checked.
 
+pub mod erosion;
 pub mod fill;
 pub mod flow;
 pub mod lakes;
 
+pub use erosion::{erode, Erosion, ErosionConfig};
 pub use fill::{priority_flood, Filled};
 pub use flow::Drainage;
