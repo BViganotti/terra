@@ -709,6 +709,7 @@ fn route(app: &Arc<App>, request: &HttpRequest) -> Response {
             assets::FAVICON_SVG.as_bytes().to_vec(),
         ),
         ("GET", "/api/health") => health(app),
+        ("GET", "/api/examples") => examples_endpoint(),
         ("POST", "/api/run") => run_endpoint(app, request),
         ("GET", "/api/job") => job_endpoint(app, request),
         ("GET", "/api/world") => world_endpoint(app, request),
@@ -742,6 +743,21 @@ fn health(app: &Arc<App>) -> Response {
         ),
     ]);
     Response::json(&body)
+}
+
+fn examples_endpoint() -> Response {
+    let items: Vec<Json> = crate::examples::EXAMPLES
+        .iter()
+        .map(|e| {
+            Json::obj(vec![
+                ("code", Json::str(e.code)),
+                ("name", Json::str(e.name)),
+                ("summary", Json::str(e.summary)),
+                ("text", Json::str(e.text)),
+            ])
+        })
+        .collect();
+    Response::json(&Json::obj(vec![("examples", Json::Array(items))]))
 }
 
 fn run_endpoint(app: &Arc<App>, request: &HttpRequest) -> Response {
@@ -2381,6 +2397,22 @@ mod tests {
             get(addr, &format!("/api/cell?id={id}&cell=999999&t=test-token")).0,
             404
         );
+    }
+
+    #[test]
+    fn examples_endpoint_lists_valid_scenarios() {
+        let (_server, addr) = test_server();
+        let (status, _, body) = get(addr, "/api/examples?t=test-token");
+        assert_eq!(status, 200);
+        let value = json::parse(&String::from_utf8_lossy(&body)).unwrap();
+        let examples = value.get("examples").unwrap().as_array().unwrap();
+        assert_eq!(examples.len(), 6);
+        for example in examples {
+            let text = example.get("text").unwrap().as_str().unwrap();
+            assert!(terra_core::scenario::parse(text).is_ok());
+            assert!(example.get("name").unwrap().as_str().unwrap().len() > 2);
+        }
+        assert_eq!(get(addr, "/api/examples").0, 401);
     }
 
     #[test]
