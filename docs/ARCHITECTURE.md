@@ -1,88 +1,165 @@
 # Architecture
 
-Terra is a pipeline of deterministic stages. Each stage reads the previous
-stage's grid layers and writes new ones; nothing depends on wall-clock time,
-hash-map iteration order or floating point ambient state.
+Terra is a deterministic pipeline followed by a read-only presentation layer. A
+world is a value; a history is a value; the Studio renders both. No stage depends
+on wall-clock time, hash-map iteration order or ambient random state.
+
+## Workspace
+
+```
+terra/
+  Cargo.toml                 virtual workspace, no external dependencies
+  crates/terra-core/         planet physics
+  crates/terra-history/      civilizations and chronicle
+  crates/terra-studio/       server, renderer, PNG, JSON, launcher, UI
+  assets/                    HTML, CSS, JS, SVG embedded at compile time
+  examples/scenarios/        six reproducible scenario documents
+  fuzz/                      std-only malformed-input campaign
+  bench/                     std-only timing harness
+  tests/studio/              Playwright browser tests
+  docs/                      simulation, chronicle, API, security, testing, etc.
+```
+
+The binary is produced by `terra-studio` and named `terra`.
+
+## Pipeline
 
 ```
 seed + scenario
       │
       ▼
-  icosphere  ──►  plates  ──►  tectonics  ──►  elevation
-                                                │
-              ┌─────────────────────────────────┘
-              ▼
-        hydrology (fill, erode, rivers, lakes, deltas)
-              │
-              ▼
-        climate (temperature, wind, moisture, currents)
-              │
-              ▼
-        biomes + ecosystems
-              │
-              ▼
-        civilizations + chronicle (year loop)
-              │
-              ▼
-        snapshots, PNG maps, Markdown/JSON exports
+  icosphere  ──►  plates  ──►  boundary stress  ──►  elevation
+                                                      │
+                    ┌─────────────────────────────────┘
+                    ▼
+        hydrology: fill → erode → route sediment → lakes/deltas
+                    │
+                    ▼
+        climate: wind → currents → temperature → moisture
+                    │
+                    ▼
+        biomes → ecosystems
+                    │
+                    ▼
+        civilizations → chronicle → snapshots
+                    │
+                    ▼
+        PNG maps, JSON/CSV/Markdown exports, Studio
 ```
 
-## Determinism
+Each arrow is a pure function of the prior layers plus the configuration and
+explicit random streams. `World::generate_with` reports progress after a stage
+completes; it never claims partial work.
 
-- All randomness comes from `terra_core::rng::Rng`, a xoshiro256** generator
-  seeded through SplitMix64. Independent streams are derived with explicit
-  stream identifiers, never from iteration order.
-- Grids are dense `Vec`s indexed by cell id. There is no randomized hashing in
-  any simulation path; maps used for lookups are `BTreeMap` or sorted vectors.
-- Floating point is used for physics. Runs are deterministic on a single
-  platform and for a fixed build; the hash is computed over layer bits.
-- The chronicle is append-only. Event ids are sequential and every cause points
-  backwards in time, which makes causality acyclic by construction.
+## Core data
 
-## Geometry
+- **Sphere** — 12·4^level + 2 unit cells, 20·4^level triangles, sorted CSR
+  neighbours, spherical areas summing to 4π.
+- **Tectonics** — `plate_of: Vec<u16>`, plates, boundaries, stress, uplift,
+  subsidence, volcanism, continental mask.
+- **Terrain** — relative and raw elevation, sea level, landmasses, shelves,
+  coasts, crust thickness and age.
+- **Hydrology** — eroded elevation, filled surface, downhill targets, drainage
+  area, discharge, Strahler order, lakes, deltas, sediment accounting.
+- **Climate** — temperature mean/min/max/seasonality/continentality, wind
+  vectors, currents, precipitation, humidity, aridity, cloud, PET.
+- **Biomes/Ecosystems** — biome id, patch id/size, NPP, richness, capacity,
+  tier, fragility.
+- **World** — config, name, all layers, stats, per-stage hashes, cell inspector.
 
-The world is a subdivided icosahedron. `Sphere::new(subdiv)` normalizes the 12
-base vertices and divides each triangle into four, deduplicating midpoints by
-index pair. At subdivision 5 this is 10,242 cells and 20,480 triangles, which is
-the default Studio resolution. Cells store a position on the unit sphere,
-neighbors in counter-clockwise order and a spherical area derived from the
-incident triangles.
+Vectors are dense and indexed by cell. Layers are cheap to clone and hash.
+
+## History data
+
+- **Civilization** — id, name, colour, capital, cells (sorted), cities,
+  population, food, cohesion, military, treasury, technology, traits, resources,
+  founded/collapsed years, last event, wars.
+- **Chronicle** — append-only `Vec<Event>` with dense ids, kinds, text, optional
+  cell/civ, structured causes, severity and tags.
+- **Snapshots** — owner grid and civ stats at a year, used for political maps and
+  timeline series.
+- **Wars** — active and historical records.
+
+History never writes back into a world. A political map is a view of a snapshot,
+not a mutation of terrain.
+
+## Determinism boundaries
+
+- All simulation randomness comes from `Rng` streams or hashed per-cell values.
+- No randomized hashing in simulation paths.
+- Floats are hashed by canonical bits.
+- Stage hashes are published; the combined hash couples configuration and
+  physics; the history hash couples events and territory.
+- Same build and platform replay is exact. Cross-platform transcendentals are
+  not promised.
+
+See `docs/DETERMINISM.md`.
+
+## Causality
+
+Events are validated at record time: non-empty causes, existing past causes,
+monotone time, text and severity limits. Validation at the end re-checks the
+whole store. Chain traversal is breadth-first and bounded; path enumeration is
+explicit and bounded. The Studio refuses to serve an unsound chronicle.
+
+See `docs/CHRONICLE.md`.
+
+## Studio
+
+```
+client (assets/app.js)
+   │  fetch + EventSource, token in query
+   ▼
+server.rs
+   ├─ HTTP parse (bounded), token auth, static assets
+   ├─ job runner (max 2 active, 10 cached)
+   ├─ render endpoints → render.rs → png.rs
+   ├─ JSON endpoints → json.rs
+   └─ exports → chronicle/export.rs
+```
+
+Generation runs on worker threads. The client subscribes to SSE progress and
+falls back to polling. Maps are encoded to PNG and cached in the browser canvas;
+the server does not keep rendered images.
+
+The server binds loopback only, requires a random token, sets a restrictive CSP,
+and enforces header/body/URL limits. See `docs/SECURITY.md` and `docs/API.md`.
 
 ## Coordinate conventions
 
-- Latitude is degrees in `[-90, 90]`, longitude degrees in `[-180, 180]`.
-- Elevation is meters relative to sea level, positive up.
-- Temperature is degrees Celsius (annual mean).
-- Precipitation is millimeters per year.
-- Discharge is cubic meters per second (scaled approximation).
-- Years are integers from `0` (planet formation) forward.
+- Latitude degrees `[-90, 90]`, longitude `[-180, 180]`.
+- Elevation meters relative to sea level, positive up.
+- Temperature degrees Celsius, annual mean.
+- Precipitation millimetres per year.
+- Discharge cubic metres per second.
+- Years integer from 0.
+- Areas steradians on the unit sphere; distances radians unless stated.
+- Civilizations numbered densely from 0; cells are `u32`; owners use
+  `u16::MAX` for unowned.
 
-## Layers
+## Failure policy
 
-`terra_core::world::World` owns the layer arrays. Layers are plain vectors so a
-snapshot is cheap to clone and hash. The Studio renders layers independently:
-elevation with hypsometric tint and hillshade, plates with categorical colors,
-climate with ramps, biomes with a fixed palette, rivers as accumulation-weighted
-polylines, and political maps from periodic ownership snapshots.
+- Malformed input returns an error with a location, never a panic.
+- Simulation configuration is clamped by `sanitized()`; the scenario parser
+  rejects out-of-range values explicitly.
+- A job that panics or produces an unsound chronicle is marked failed and is not
+  served.
+- Rendering and queries never mutate state, so a bad request cannot corrupt a
+  world.
+- Bounded caches and caps keep memory predictable: two generations, ten worlds,
+  200,000 events, 101 snapshots, 48-deep chains.
 
-## Chronicle
+## Tooling
 
-`terra_history::chronicle::Chronicle` stores events with structured causes:
+- `fuzz/` generates malformed scenarios and JSON plus a mutation sweep.
+- `bench/` measures world, history, queries, exports, rendering, PNG and parsing.
+- `tests/studio/` drives the real browser; `crates/*/tests/` cover public APIs.
+- No CI exists by requirement. Every commit is built and tested locally.
 
-- `Cause::State(StateFact)` — a measured physical or social fact, e.g.
-  `precip` at a cell, or `cohesion` of a civilization.
-- `Cause::Event(EventId)` — an earlier chronicle event.
+## Where to look next
 
-Queries never mutate history. `explain` walks causes into a deterministic
-narrative, and `validate` rejects orphan events or forward references. The
-Studio's event panel uses the same query API as the exports.
-
-## Server
-
-`terra-studio` runs a small HTTP/1.1 server on loopback with a random bearer
-token. It serves embedded assets from `include_str!`, accepts bounded JSON
-requests, runs generation on a worker thread, and streams progress over SSE.
-Rendered maps are encoded to PNG by the built-in encoder, which uses a
-fixed-Huffman DEFLATE stream with an Adler-32 trailer.
-
-No stage writes to stdout unless the launcher is in headless reporting mode.
+- Physics: `docs/SIMULATION.md`.
+- History: `docs/CHRONICLE.md` and `docs/EVENTS.md`.
+- Product: `docs/STUDIO.md`, `docs/API.md`, `docs/RENDERING.md`.
+- Quality: `docs/TESTING.md`, `docs/COVERAGE.md`, `docs/PERFORMANCE.md`.
+- Limits: `LIMITATIONS.md`.
