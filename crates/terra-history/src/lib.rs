@@ -7,6 +7,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod chronicle;
+
 /// Semantic version of the history model.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
