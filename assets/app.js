@@ -1071,6 +1071,36 @@
     if (state.world) location.href = api("/api/export/world.json", { id: state.world });
   });
 
+  /* ------------------------------------------------------------- shortcuts */
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    const tag = (ev.target && ev.target.tagName ? ev.target.tagName : "").toLowerCase();
+    if (["input", "textarea", "select"].includes(tag)) return;
+    if (ev.key === "Escape") {
+      stopPlayback();
+      return;
+    }
+    if (ev.key === "p" || ev.key === "P") {
+      startPlayback();
+      ev.preventDefault();
+      return;
+    }
+    if ((ev.key === "ArrowRight" || ev.key === "ArrowLeft") && state.events.length) {
+      const index = state.events.findIndex((e) => e.id === state.selected);
+      const next = ev.key === "ArrowRight"
+        ? Math.min(state.events.length - 1, index < 0 ? 0 : index + 1)
+        : Math.max(0, index < 0 ? 0 : index - 1);
+      const event = state.events[next];
+      if (event) {
+        loadEvent(event.id);
+        const row = document.querySelector('.event.selected');
+        if (row) row.scrollIntoView({ block: "nearest" });
+      }
+      ev.preventDefault();
+    }
+  });
+
   /* ----------------------------------------------------------------- boot */
 
   async function boot() {
