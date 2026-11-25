@@ -20,7 +20,10 @@
     </div>
     <form id="launch" class="controls" autocomplete="off">
       <label>Seed
-        <input id="seed" type="number" min="0" max="4294967295" step="1" value="42">
+        <span class="seed-row">
+          <input id="seed" type="number" min="0" max="4294967295" step="1" value="42">
+          <button id="random-seed" type="button" class="ghost mini" title="Roll a new seed">Roll</button>
+        </span>
       </label>
       <label>Scenario
         <select id="preset">
@@ -53,6 +56,27 @@
     </form>
   </header>
 
+  <details id="scenario-box" class="scenario-box">
+    <summary>Custom scenario</summary>
+    <div class="scenario-grid">
+      <textarea id="scenario" spellcheck="false" placeholder="Optional: paste a scenario document. Leave empty to use the controls above.
+name = &quot;My World&quot;
+seed = 42
+subdiv = 4
+years = 6000
+plates = 9
+land = 0.31
+erosion = 12
+temperature = 0
+precip = 860"></textarea>
+      <div class="scenario-help">
+        <p>Scenario keys are validated. Limits: 8 KiB, 96 lines, 512 bytes per line, 32 entries.</p>
+        <p>Numeric controls above override the scenario's seed, span, subdivision and peoples. See <span class="mono">docs/SCENARIOS.md</span>.</p>
+        <button id="clear-scenario" type="button" class="ghost">Clear</button>
+      </div>
+    </div>
+  </details>
+
   <div id="statusbar" class="statusbar" role="status" aria-live="polite">
     <span id="status-text">Ready. Forge a world to begin.</span>
     <span id="status-hash" class="mono"></span>
@@ -70,6 +94,7 @@
           <label class="check" title="Draw civilization territory over this layer">
             <input id="civ-overlay" type="checkbox"> Civs
           </label>
+          <button id="play" type="button" class="ghost">Play</button>
           <div class="zoom-buttons">
             <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
             <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
@@ -95,6 +120,7 @@
       <div class="stage-footer">
         <div id="legend" class="legend"></div>
         <div class="stage-actions">
+          <button id="share" type="button" class="ghost" disabled>Share</button>
           <button id="download-map" type="button" class="ghost" disabled>Download map</button>
         </div>
       </div>
