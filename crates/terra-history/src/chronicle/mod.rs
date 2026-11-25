@@ -490,6 +490,14 @@ impl Chronicle {
         if event.causes.len() > MAX_CAUSES {
             return Err(ChronicleError::TooManyCauses(event.causes.len()));
         }
+        // A cause may be cited twice by different rules (for example the war
+        // declaration and the latest battle can be the same event). Keep the
+        // first occurrence of each event cause so validation stays meaningful.
+        let mut seen_events = std::collections::BTreeSet::new();
+        event.causes.retain(|c| match c {
+            Cause::Event(id) => seen_events.insert(*id),
+            Cause::State(_) => true,
+        });
         if event.year < self.last_year {
             return Err(ChronicleError::TimeReversed(self.last_year, event.year));
         }
@@ -774,13 +782,14 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_event_causes_are_flagged() {
+    fn duplicate_event_causes_are_collapsed() {
         let mut c = Chronicle::new();
         let a = c.record(event(0, EventKind::WorldFormed, fact())).unwrap();
         let mut e = event(1, EventKind::Expansion, Cause::Event(a));
         e.causes = vec![Cause::Event(a), Cause::Event(a)];
         c.record(e).unwrap();
-        assert!(!c.validate().is_empty());
+        assert_eq!(c.get(1).unwrap().causes.len(), 1);
+        assert!(c.is_sound());
     }
 
     #[test]
