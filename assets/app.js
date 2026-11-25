@@ -915,7 +915,32 @@
 
   $("clear-scenario").addEventListener("click", () => {
     $("scenario").value = "";
+    $("example-select").value = "";
     toast("Scenario cleared. The preset controls apply.");
+  });
+
+  async function loadExamples() {
+    try {
+      const data = await getJSON("/api/examples");
+      const select = $("example-select");
+      for (const example of data.examples || []) {
+        const option = document.createElement("option");
+        option.value = example.code;
+        option.textContent = example.name + " — " + example.summary;
+        option.dataset.text = example.text;
+        select.appendChild(option);
+      }
+    } catch (_) {
+      // Examples are optional; the editor still works.
+    }
+  }
+
+  $("example-select").addEventListener("change", (ev) => {
+    const option = ev.target.selectedOptions[0];
+    if (!option || !option.dataset.text) return;
+    $("scenario").value = option.dataset.text;
+    $("scenario-box").open = true;
+    setStatus("Example loaded into the scenario editor. Forge to explore it.");
   });
 
   function permalink() {
@@ -1009,6 +1034,7 @@
     }
     $("year").max = yearsParam || 10000;
     drawMap();
+    loadExamples();
     if (params.get("auto") === "1" && params.has("seed") && token) {
       // A shared replay link forges immediately.
       await launchWorld(requestBody());
