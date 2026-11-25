@@ -97,6 +97,8 @@ precip = 860"></textarea>
           <label class="check" title="Draw civilization territory over this layer">
             <input id="civ-overlay" type="checkbox"> Civs
           </label>
+          <label class="check" title="Hillshade relief"><input id="shade" type="checkbox" checked> Shade</label>
+          <label class="check" title="Rivers and lakes"><input id="rivers" type="checkbox" checked> Rivers</label>
           <button id="play" type="button" class="ghost">Play</button>
           <div class="zoom-buttons">
             <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
@@ -147,6 +149,11 @@ precip = 860"></textarea>
       <section class="panel">
         <h2>Peoples</h2>
         <div id="civ-list" class="civ-list muted">No civilizations yet.</div>
+      </section>
+
+      <section class="panel" id="civ-panel" hidden>
+        <h2>People detail</h2>
+        <div id="civ-detail" class="muted">Select a people.</div>
       </section>
     </aside>
   </main>

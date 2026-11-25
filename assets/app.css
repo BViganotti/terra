@@ -298,6 +298,14 @@ canvas#map.dragging { cursor: grabbing; }
 .civ-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .civ-row .meta { color: var(--muted); font-family: var(--mono); font-size: 10px; }
 
+.civ-detail-title { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 15px; }
+.civ-detail-title .swatch { width: 12px; height: 12px; border-radius: 3px; }
+.civ-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+.civ-tag { font-size: 10px; padding: 2px 6px; border-radius: 99px; border: 1px solid var(--line); color: var(--ink-dim); }
+.civ-city { display: flex; justify-content: space-between; font-size: 11px; padding: 3px 0; border-bottom: 1px dashed var(--line-soft); }
+.civ-city:last-child { border-bottom: 0; }
+.civ-city .pop { color: var(--muted); font-family: var(--mono); }
+
 /* -------------------------------------------------------------- chronicle */
 
 .chronicle { padding: 10px 22px 26px; }
