@@ -10,6 +10,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod biome;
 pub mod climate;
 pub mod hash;
 pub mod hydrology;
