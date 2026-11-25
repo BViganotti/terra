@@ -1,0 +1,11 @@
+# A hot, dry world with broad continents and scarce rain.
+name = "Amber Expanse"
+note = "Subtropical deserts dominate; civilizations cluster on rivers and coasts."
+seed = 77
+subdiv = 4
+years = 8000
+plates = 8
+land = 0.44
+erosion = 14
+temperature = 4.0
+precip = 380
