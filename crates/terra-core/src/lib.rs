@@ -16,6 +16,7 @@ pub mod hash;
 pub mod hydrology;
 pub mod noise;
 pub mod rng;
+pub mod scenario;
 pub mod sphere;
 pub mod tectonics;
 pub mod terrain;
