@@ -114,7 +114,8 @@ pub fn launch() -> io::Result<()> {
 }
 
 fn report(args: &Args) -> io::Result<()> {
-    let (world_cfg, history_cfg) = configs(args).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let (world_cfg, history_cfg) =
+        configs(args).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let started = Instant::now();
     let world = World::generate(world_cfg.clone());
     let world_ms = started.elapsed().as_millis();
@@ -175,8 +176,12 @@ fn configs(args: &Args) -> Result<(WorldConfig, HistoryConfig), String> {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
         terra_core::scenario::parse(&text).map_err(|e| format!("{path}: {e}"))?
     } else if let Some(preset) = &args.preset {
-        Scenario::preset(preset, args.seed.unwrap_or(42), args.years.unwrap_or(10_000))
-            .ok_or_else(|| format!("unknown preset {preset}"))?
+        Scenario::preset(
+            preset,
+            args.seed.unwrap_or(42),
+            args.years.unwrap_or(10_000),
+        )
+        .ok_or_else(|| format!("unknown preset {preset}"))?
     } else {
         Scenario::from_config(WorldConfig::default())
     };
@@ -255,8 +260,18 @@ mod tests {
     #[test]
     fn parses_flags() {
         let a = args(&[
-            "--seed", "7", "--years", "500", "--subdiv", "3", "--civs", "4", "--preset",
-            "arid", "--report", "--no-open",
+            "--seed",
+            "7",
+            "--years",
+            "500",
+            "--subdiv",
+            "3",
+            "--civs",
+            "4",
+            "--preset",
+            "arid",
+            "--report",
+            "--no-open",
         ])
         .unwrap();
         assert_eq!(a.seed, Some(7));
@@ -278,7 +293,10 @@ mod tests {
 
     #[test]
     fn configs_are_clamped() {
-        let a = args(&["--seed", "9", "--years", "1", "--subdiv", "99", "--civs", "99"]).unwrap();
+        let a = args(&[
+            "--seed", "9", "--years", "1", "--subdiv", "99", "--civs", "99",
+        ])
+        .unwrap();
         let (w, h) = configs(&a).unwrap();
         assert_eq!(w.years, 100);
         assert_eq!(w.subdiv, 5);

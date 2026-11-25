@@ -272,14 +272,14 @@ pub fn render(world: &World, history: Option<&History>, opts: RenderOptions) -> 
     } else {
         vec![1.0; world.len()]
     };
-    let owner: Option<Vec<u16>> = if (opts.layer == Layer::Political || opts.civ_overlay) && history.is_some()
-    {
-        history
-            .and_then(|h| h.snapshot_at(opts.year.unwrap_or(h.config.years)))
-            .map(|s| s.owner.clone())
-    } else {
-        None
-    };
+    let owner: Option<Vec<u16>> =
+        if (opts.layer == Layer::Political || opts.civ_overlay) && history.is_some() {
+            history
+                .and_then(|h| h.snapshot_at(opts.year.unwrap_or(h.config.years)))
+                .map(|s| s.owner.clone())
+        } else {
+            None
+        };
     let civ_colors: Vec<[u8; 3]> = history
         .map(|h| h.civs.iter().map(|c| civ_color(c.color_index)).collect())
         .unwrap_or_default();
