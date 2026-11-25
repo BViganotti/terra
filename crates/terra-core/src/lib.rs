@@ -12,6 +12,7 @@
 
 pub mod hash;
 pub mod rng;
+pub mod sphere;
 pub mod vec3;
 
 /// Semantic version of the simulation model.
