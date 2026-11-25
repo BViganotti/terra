@@ -1,7 +1,13 @@
 # Studio end-to-end test
 
-`test_studio.py` starts the release launcher on a free loopback port, drives a
-real Chromium page with Playwright, and checks the product flow.
+Two scripts start the release launcher on a free loopback port and drive a real
+Chromium page with Playwright:
+
+- `test_studio.py` checks the core flow: forge, layers, year scrub, inspection,
+  chronicle, causes and map download.
+- `test_features.py` checks the interactive features: example scenarios, custom
+  scenario handling, playback, the people detail panel, layer toggles and the
+  replay/share link.
 
 ## Prerequisites
 
@@ -17,6 +23,7 @@ dependencies.
 ```sh
 cargo build --release
 python3 tests/studio/test_studio.py
+python3 tests/studio/test_features.py
 ```
 
 The script prints each stage and exits non-zero on failure. It writes a
@@ -36,6 +43,13 @@ git.
 9. Following a cause link changes the cause panel.
 10. A kind filter, text search, reset and pagination work.
 11. Downloading the map produces a `.png` file.
+
+## Share links
+
+`test_features.py` loads a custom micro scenario, forges it, clicks Share and
+opens the copied link in a fresh page. The scenario is carried in the URL
+fragment, so a replay link reproduces the same 162-cell world without server
+state.
 
 ## Notes
 

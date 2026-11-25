@@ -21,6 +21,7 @@ bench:
 e2e:
 	cargo build --release -p terra-studio
 	python3 tests/studio/test_studio.py
+	python3 tests/studio/test_features.py
 
 coverage:
 	cargo llvm-cov --workspace --tests --summary-only
