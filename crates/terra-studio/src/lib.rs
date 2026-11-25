@@ -9,6 +9,7 @@
 #![forbid(unsafe_code)]
 
 pub mod assets;
+pub mod examples;
 pub mod json;
 pub mod launcher;
 pub mod png;
