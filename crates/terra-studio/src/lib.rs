@@ -11,6 +11,7 @@
 pub mod assets;
 pub mod json;
 pub mod png;
+pub mod render;
 pub mod server;
 
 /// Semantic version of the Studio.
