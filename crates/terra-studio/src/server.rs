@@ -992,6 +992,14 @@ fn world_endpoint(app: &Arc<App>, request: &HttpRequest) -> Response {
                 ("population", Json::num(c.population)),
                 ("cells", Json::num(c.cells.len() as f64)),
                 ("tech", Json::num(f64::from(c.tech))),
+                ("founded", Json::num(f64::from(c.founded_year))),
+                (
+                    "collapsedYear",
+                    match c.collapsed_year {
+                        Some(y) => Json::num(f64::from(y)),
+                        None => Json::Null,
+                    },
+                ),
             ])
         })
         .collect();

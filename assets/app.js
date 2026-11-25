@@ -330,13 +330,16 @@
       const row = document.createElement("button");
       row.type = "button";
       row.className = "civ-row" + (civ.alive ? "" : " dead");
+      const meta = civ.alive
+        ? fmtBig(civ.population) + " · " + fmt(civ.cells) + " cells"
+        : "fallen" + (civ.collapsedYear ? " · year " + fmt(civ.collapsedYear) : "");
       row.innerHTML =
         '<span class="swatch" style="background:' + esc(civ.color) + '"></span>' +
         '<span class="name">' + esc(civ.name) + "</span>" +
-        '<span class="meta">' + fmtBig(civ.population) + " · " + fmt(civ.cells) + " cells</span>";
+        '<span class="meta">' + meta + "</span>";
       row.title = civ.alive
         ? civ.name + ", " + fmtBig(civ.population) + " people, technology " + civ.tech
-        : civ.name + " (collapsed)";
+        : civ.name + " collapsed";
       row.addEventListener("click", () => {
         state.filters.civ = String(civ.id);
         $("filter-civ").value = String(civ.id);
