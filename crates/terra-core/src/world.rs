@@ -368,6 +368,7 @@ impl World {
             &lake,
             &river,
         );
+        report("complete", 1.0);
 
         World {
             config,
