@@ -412,9 +412,58 @@
         state.filters.civ = String(civ.id);
         $("filter-civ").value = String(civ.id);
         loadChronicle(true);
-        $("event-list").scrollIntoView({ behavior: "smooth", block: "start" });
+        showCiv(civ.id);
       });
       list.appendChild(row);
+    }
+  }
+
+  async function showCiv(id) {
+    if (!state.world) return;
+    const panel = $("civ-panel");
+    const body = $("civ-detail");
+    try {
+      const data = await getJSON("/api/civ", { id: state.world, civ: id });
+      const civ = data.civ;
+      const color = civ.color;
+      const rows = [
+        ["status", civ.alive ? "extant" : "fallen" + (civ.collapsedYear ? " " + civ.collapsedYear : "")],
+        ["capital", civ.capitalName],
+        ["population", fmtBig(civ.population)],
+        ["territory", fmt(civ.cells) + " cells"],
+        ["technology", civ.techName + " (" + civ.tech + ")"],
+        ["cohesion", civ.cohesion.toFixed(2)],
+        ["military", fmtBig(civ.military)],
+        ["treasury", fmtBig(civ.treasury)],
+        ["food", civ.food.toFixed(1) + " years"],
+        ["traits", civ.traits.label],
+      ];
+      const resources = Object.entries(civ.resources || {})
+        .map(([k, v]) => '<span class="civ-tag">' + esc(k) + " ×" + fmt(v) + "</span>")
+        .join("");
+      const cities = (civ.cities || []).slice().sort((a, b) => b.population - a.population).slice(0, 8)
+        .map((city) =>
+          '<div class="civ-city"><span>' + (city.capital ? "★ " : "") + esc(city.name) +
+          '</span><span class="pop">' + fmtBig(city.population) + "</span></div>")
+        .join("");
+      const wars = (civ.wars || []).slice(-6).map((war) =>
+        '<div class="small">vs ' + esc(civName(war.a === civ.id ? war.b : war.a)) +
+        " · " + war.start + (war.end ? "–" + war.end : "–now") +
+        " · " + war.battles + " battles</div>").join("");
+      const events = (data.events || []).slice(0, 8).map(eventLink).join("");
+      body.className = "";
+      body.innerHTML =
+        '<div class="civ-detail-title"><span class="swatch" style="background:' + esc(color) + '"></span><strong>' + esc(civ.name) + "</strong></div>" +
+        '<div class="muted small">' + esc(civ.alive ? "a living people" : "a fallen people") + "</div>" +
+        '<dl class="kv" style="margin-top:8px">' + rows.map(([k, v]) => row(k, v)).join("") + "</dl>" +
+        (resources ? '<div class="civ-tags">' + resources + "</div>" : "") +
+        (cities ? '<div class="cause-section"><h3>Cities</h3>' + cities + "</div>" : "") +
+        (wars ? '<div class="cause-section"><h3>Wars</h3>' + wars + "</div>" : "") +
+        (events ? '<div class="cause-section"><h3>Recent events</h3><div class="cause-list">' + events + "</div></div>" : "");
+      panel.hidden = false;
+      panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } catch (err) {
+      toast(err.message);
     }
   }
 
@@ -885,6 +934,13 @@
     loadEvent(Number(btn.dataset.event));
   });
   $("inspector").addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-event]");
+    if (!btn) return;
+    loadEvent(Number(btn.dataset.event));
+    $("cause-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
+  $("civ-detail").addEventListener("click", (ev) => {
     const btn = ev.target.closest("[data-event]");
     if (!btn) return;
     loadEvent(Number(btn.dataset.event));
