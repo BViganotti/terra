@@ -1,0 +1,11 @@
+# A balanced, Earth-like world: nine plates, three-tenths land, ample rain.
+name = "Temperate Canopy"
+note = "Default Terra conditions with a slightly wetter ocean."
+seed = 42
+subdiv = 4
+years = 6000
+plates = 9
+land = 0.31
+erosion = 12
+temperature = 0.0
+precip = 900
