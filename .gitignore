@@ -4,3 +4,6 @@
 *.pdb
 .DS_Store
 *.swp
+
+tests/studio/artifacts/
+tests/studio/__pycache__/
