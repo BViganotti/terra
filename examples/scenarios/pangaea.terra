@@ -1,0 +1,11 @@
+# One vast continent: long interior journeys, continental climates, dry hearts.
+name = "One Land"
+note = "A supercontinent assembles under few plates and heavy erosion."
+seed = 9
+subdiv = 4
+years = 9000
+plates = 5
+land = 0.48
+erosion = 10
+temperature = 1.0
+precip = 720
