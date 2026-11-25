@@ -721,6 +721,8 @@ fn route(app: &Arc<App>, request: &HttpRequest) -> Response {
         ("GET", "/api/timeline") => timeline_endpoint(app, request),
         ("GET", "/api/export/chronicle.md") => export_markdown(app, request),
         ("GET", "/api/export/chronicle.json") => export_json(app, request),
+        ("GET", "/api/export/chronicle.csv") => export_csv(app, request),
+        ("GET", "/api/export/world.json") => export_world(app, request),
         _ => Response::error(404, "not found"),
     }
 }
@@ -1816,6 +1818,43 @@ fn export_json(app: &Arc<App>, request: &HttpRequest) -> Response {
     )
 }
 
+fn export_csv(app: &Arc<App>, request: &HttpRequest) -> Response {
+    let id = match request_id(request) {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let art = match artifact(app, &id) {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    let text = chronicle_export::csv(&art.world.name, &art.history.chronicle);
+    let filename = format!("{}-chronicle.csv", safe_filename(&art.world.name));
+    Response::new(200, "text/csv; charset=utf-8", text).with_header(
+        "Content-Disposition",
+        format!("attachment; filename=\"{filename}\""),
+    )
+}
+
+fn export_world(app: &Arc<App>, request: &HttpRequest) -> Response {
+    let id = match request_id(request) {
+        Ok(id) => id,
+        Err(r) => return r,
+    };
+    let name = match artifact(app, &id) {
+        Ok(a) => a.world.name.clone(),
+        Err(r) => return r,
+    };
+    let mut response = world_endpoint(app, request);
+    response.headers.push((
+        "Content-Disposition",
+        format!(
+            "attachment; filename=\"{}-world.json\"",
+            safe_filename(&name)
+        ),
+    ));
+    response
+}
+
 fn safe_filename(name: &str) -> String {
     let mut out: String = name
         .chars()
@@ -2284,6 +2323,27 @@ mod tests {
         assert_eq!(status, 200);
         let parsed = json::parse(&String::from_utf8_lossy(&body)).unwrap();
         assert_eq!(parsed.get("sound").unwrap().as_bool(), Some(true));
+
+        let (status, head, body) = get(
+            addr,
+            &format!("/api/export/chronicle.csv?id={id}&t=test-token"),
+        );
+        assert_eq!(status, 200);
+        assert!(head.contains("text/csv"));
+        let csv = String::from_utf8_lossy(&body);
+        assert!(csv.contains("id,year,kind"));
+        assert!(csv.lines().count() >= 4);
+
+        let (status, head, body) = get(
+            addr,
+            &format!("/api/export/world.json?id={id}&t=test-token"),
+        );
+        assert_eq!(status, 200);
+        assert!(head.contains("application/json"));
+        assert!(head.to_lowercase().contains("attachment"));
+        let world = json::parse(&String::from_utf8_lossy(&body)).unwrap();
+        assert_eq!(world.get("sound"), None);
+        assert!(world.get("hashes").unwrap().get("chronicle").is_some());
     }
 
     #[test]
